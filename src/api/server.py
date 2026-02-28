@@ -10,18 +10,22 @@ from typing import Any, Dict, List
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
 from src.auth.routes import get_current_user, router as auth_router
-from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
+from src.corrections.routes import router as corrections_router
 from src.memory.routes import router as memory_router
+from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
 from src.memory.supermemory_client import SupermemoryClient
 from src.report.generate_baseline import generate_baseline
 from src.utils.images import normalize_image_to_frame, write_blank_frame
 from src.utils.video import sample_video_frames
+from src.vlm.classifier import EquipmentClassifier
 
 app = FastAPI(title='CATalyst Inspect API')
 app.include_router(auth_router)
 app.include_router(memory_router)
+app.include_router(corrections_router)
 logger = logging.getLogger(__name__)
 memory_client = SupermemoryClient()
+equipment_classifier = EquipmentClassifier()
 
 
 @app.get('/health')
@@ -105,8 +109,35 @@ async def inspect(
         frame_warning = f'frame extraction failed; generated blank frame ({exc})'
         evidence_frames = [write_blank_frame(temp_dir)]
 
-    scores = {'radiator_debris': 0.0, 'hose_leak': 0.0}
+    # Classify using VLM (or fallback to empty scores if VLM unavailable)
+    vlm_results: Dict[str, Any] = {}
+    try:
+        frame_paths = [os.path.join(temp_dir, f) for f in evidence_frames]
+        vlm_results = equipment_classifier.classify_all_items(
+            frame_paths=frame_paths,
+            vin=vin,
+            user_id=user.id if user else None,
+        )
+        scores = {item_id: result.score for item_id, result in vlm_results.items()}
+    except Exception as exc:
+        logger.warning('VLM classification failed, using fallback: %s', exc)
+        scores = {}
+
     baseline_report = generate_baseline(scores, evidence_frames)
+
+    # Persist frames for correction retrieval
+    frame_storage_dir = os.getenv('FRAME_STORAGE_DIR', '/tmp/catalyst_frames')
+    os.makedirs(frame_storage_dir, exist_ok=True)
+    for frame_name in evidence_frames:
+        frame_path = os.path.join(temp_dir, frame_name)
+        frame_hash = _sha256_file(frame_path)
+        if frame_hash:
+            dest_path = os.path.join(frame_storage_dir, f'{frame_hash}.jpg')
+            if not os.path.exists(dest_path):
+                try:
+                    shutil.copy2(frame_path, dest_path)
+                except Exception as copy_exc:
+                    logger.warning('Failed to persist frame %s: %s', frame_name, copy_exc)
     report_payload = baseline_report.model_dump()
 
     memory_context: List[Dict[str, Any]] = []
@@ -166,6 +197,16 @@ async def inspect(
             )
             memory_write_status['engineer_note'] = 'ok' if created_note else 'error'
 
+    # Build VLM classifications for frontend
+    vlm_classifications = {}
+    for item_id, result in vlm_results.items():
+        vlm_classifications[item_id] = {
+            'status': result.status,
+            'score': result.score,
+            'confidence': result.confidence,
+            'reasoning': result.reasoning,
+        }
+
     return {
         'client_trace_id': client_trace_id,
         'received': {
@@ -179,6 +220,7 @@ async def inspect(
         'evidence_frames': evidence_frames,
         'frame_warning': frame_warning,
         'report': report_payload,
+        'vlm_classifications': vlm_classifications,
         'memory_context': memory_context,
         'memory_write_status': memory_write_status,
     }
