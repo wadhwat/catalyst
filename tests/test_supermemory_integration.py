@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+import os
+import uuid
+from pathlib import Path
+
+import pytest
+from supermemory import Supermemory
+
+
+def _load_env_from_repo_root() -> None:
+    if os.getenv('SUPERMEMORY_API_KEY'):
+        return
+    env_path = Path(__file__).resolve().parent.parent / '.env'
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def _client() -> Supermemory:
+    _load_env_from_repo_root()
+    api_key = os.getenv('SUPERMEMORY_API_KEY')
+    if not api_key:
+        pytest.skip('SUPERMEMORY_API_KEY not set')
+    base_url = os.getenv('SUPERMEMORY_BASE_URL') or os.getenv('SUPERMEMORY_API_URL')
+    if base_url:
+        if not base_url.startswith(('http://', 'https://')):
+            base_url = f'https://{base_url}'
+        if base_url.rstrip('/').endswith('/v3'):
+            base_url = base_url.rstrip('/')
+            base_url = base_url[: -len('/v3')]
+    return Supermemory(api_key=api_key, base_url=base_url)
+
+
+def test_supermemory_add_and_search() -> None:
+    client = _client()
+    run_id = uuid.uuid4().hex[:8]
+    content = f'cat inspection note {run_id}'
+    tag = f'ci-run:{run_id}'
+
+    client.add(content=content, container_tags=[tag])
+
+    response = client.search.execute(q=content, container_tags=[tag], limit=5)
+    assert response.results, 'Expected at least one search result'
+    texts = []
+    for result in response.results:
+        text = getattr(result, 'text', None)
+        if text:
+            texts.append(text)
+    assert any(content in text for text in texts), 'Expected inserted content in search results'
