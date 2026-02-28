@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "motion/react";
 import {
   AreaChart,
@@ -14,33 +14,12 @@ import {
   CartesianGrid,
 } from "recharts";
 import { TrendingUp, TrendingDown, Shield, Clock, Zap, AlertTriangle } from "lucide-react";
+import { useInspection } from "../context/InspectionContext";
 
-const weeklyScans = [
-  { day: "Mon", scans: 4, issues: 1 },
-  { day: "Tue", scans: 6, issues: 2 },
-  { day: "Wed", scans: 5, issues: 0 },
-  { day: "Thu", scans: 8, issues: 3 },
-  { day: "Fri", scans: 7, issues: 1 },
-  { day: "Sat", scans: 3, issues: 0 },
-  { day: "Sun", scans: 2, issues: 0 },
-];
-
-const issuesByPart = [
-  { part: "Bucket", count: 8, color: "#FFCD11" },
-  { part: "Hydraulics", count: 6, color: "#F97316" },
-  { part: "Track", count: 5, color: "#EF4444" },
-  { part: "Engine", count: 3, color: "#A78BFA" },
-  { part: "Bearing", count: 2, color: "#38BDF8" },
-  { part: "Seals", count: 1, color: "#34D399" },
-];
-
-const uptimeData = [
-  { name: "CAT 320", uptime: 94, fill: "#FFCD11" },
-  { name: "CAT D6", uptime: 98, fill: "#22C55E" },
-  { name: "CAT 777", uptime: 71, fill: "#EF4444" },
-  { name: "CAT 980", uptime: 89, fill: "#F97316" },
-  { name: "CAT D8", uptime: 85, fill: "#A78BFA" },
-];
+const PART_COLORS: Record<string, string> = {
+  Bucket: "#FFCD11", Hydraulic: "#F97316", Track: "#EF4444",
+  Engine: "#A78BFA", Bearing: "#38BDF8", Seals: "#34D399",
+};
 
 const monthlyTrend = [
   { month: "Sep", prevented: 3, downtime: 5.2 },
@@ -51,12 +30,20 @@ const monthlyTrend = [
   { month: "Feb", prevented: 14, downtime: 1.2 },
 ];
 
-const kpis = [
-  { label: "Downtime Prevented", value: "47h", trend: "+12%", up: true, color: "#22C55E", icon: Shield },
-  { label: "Issues Detected", value: "23", trend: "+8%", up: false, color: "#FFCD11", icon: AlertTriangle },
-  { label: "Avg Check Time", value: "4m 12s", trend: "-18%", up: true, color: "#38BDF8", icon: Clock },
-  { label: "AI Accuracy", value: "97.3%", trend: "+1.2%", up: true, color: "#A78BFA", icon: Zap },
-];
+function parseDuration(s: string): number {
+  let secs = 0;
+  const minMatch = s.match(/(\d+)\s*m/);
+  const secMatch = s.match(/(\d+)\s*s/);
+  if (minMatch) secs += parseInt(minMatch[1]) * 60;
+  if (secMatch) secs += parseInt(secMatch[1]);
+  return secs || 252; // fallback 4m12s
+}
+
+function formatDuration(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs % 60);
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
 
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -81,6 +68,63 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export function Analytics() {
   const [activeTab, setActiveTab] = useState<"overview" | "fleet" | "trends">("overview");
+  const { state } = useInspection();
+  const { history, machines } = state;
+
+  const totalIssues = history.reduce((sum, h) => sum + h.issuesFound, 0);
+  const avgDuration = history.length > 0
+    ? history.reduce((sum, h) => sum + parseDuration(h.duration), 0) / history.length
+    : 252;
+  const passRate = history.length > 0
+    ? ((history.filter((h) => h.status === "passed").length / history.length) * 100).toFixed(1)
+    : "97.3";
+
+  const kpis = [
+    { label: "Downtime Prevented", value: "47h", trend: "+12%", up: true, color: "#22C55E", icon: Shield },
+    { label: "Issues Detected", value: String(totalIssues), trend: "+8%", up: false, color: "#FFCD11", icon: AlertTriangle },
+    { label: "Avg Check Time", value: formatDuration(avgDuration), trend: "-18%", up: true, color: "#38BDF8", icon: Clock },
+    { label: "AI Accuracy", value: `${passRate}%`, trend: "+1.2%", up: true, color: "#A78BFA", icon: Zap },
+  ];
+
+  // Derive weekly scans from history
+  const weeklyScans = useMemo(() => {
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const counts = days.map((day) => ({ day, scans: 0, issues: 0 }));
+    history.forEach((h) => {
+      const d = new Date(h.timestamp);
+      const dayIdx = d.getDay();
+      counts[dayIdx].scans++;
+      counts[dayIdx].issues += h.issuesFound;
+    });
+    // Rotate so Mon is first
+    return [...counts.slice(1), counts[0]];
+  }, [history]);
+
+  // Derive issues by part from flaggedParts
+  const issuesByPart = useMemo(() => {
+    const partCounts: Record<string, number> = {};
+    history.forEach((h) => {
+      h.flaggedParts?.forEach((part) => {
+        // Normalize to short name
+        const key = part.split(" ")[0];
+        partCounts[key] = (partCounts[key] || 0) + 1;
+      });
+    });
+    return Object.entries(partCounts)
+      .map(([part, count]) => ({ part, count, color: PART_COLORS[part] || "#FFCD11" }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [history]);
+
+  // Derive uptime from machine status
+  const uptimeData = useMemo(() => {
+    const fills = ["#FFCD11", "#22C55E", "#EF4444", "#F97316", "#A78BFA", "#38BDF8"];
+    return machines.map((m, i) => ({
+      name: m.model,
+      uptime: m.status === "good" ? 95 + Math.floor(Math.random() * 5) : m.status === "needs-check" ? 80 + Math.floor(Math.random() * 10) : 60 + Math.floor(Math.random() * 15),
+      fill: fills[i % fills.length],
+    }));
+  }, [machines]);
 
   return (
     <div

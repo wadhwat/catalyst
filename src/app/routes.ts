@@ -1,4 +1,5 @@
 import { createBrowserRouter } from "react-router";
+import { RootProvider } from "./components/RootProvider";
 import { Layout } from "./components/Layout";
 import { MachineSelection } from "./components/MachineSelection";
 import { CameraScreen } from "./components/CameraScreen";
@@ -8,15 +9,20 @@ import { Analytics } from "./components/Analytics";
 export const router = createBrowserRouter([
   {
     path: "/",
-    Component: Layout,
+    Component: RootProvider,
     children: [
-      { index: true, Component: MachineSelection },
-      { path: "history", Component: MaintenanceHistory },
-      { path: "analytics", Component: Analytics },
+      {
+        Component: Layout,
+        children: [
+          { index: true, Component: MachineSelection },
+          { path: "history", Component: MaintenanceHistory },
+          { path: "analytics", Component: Analytics },
+        ],
+      },
+      {
+        path: "camera/:machineId",
+        Component: CameraScreen,
+      },
     ],
-  },
-  {
-    path: "/camera/:machineId",
-    Component: CameraScreen,
   },
 ]);

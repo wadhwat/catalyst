@@ -11,127 +11,8 @@ import {
   Filter,
   TrendingUp,
 } from "lucide-react";
-
-interface HistoryEntry {
-  id: string;
-  date: string;
-  time: string;
-  machine: string;
-  machineType: string;
-  operator: string;
-  status: "passed" | "warning" | "failed";
-  partsChecked: number;
-  issuesFound: number;
-  duration: string;
-  notes?: string;
-  flaggedParts?: string[];
-}
-
-const historyData: HistoryEntry[] = [
-  {
-    id: "h1",
-    date: "Today",
-    time: "08:14 AM",
-    machine: "CAT 320",
-    machineType: "Hydraulic Excavator",
-    operator: "J. Davis",
-    status: "passed",
-    partsChecked: 6,
-    issuesFound: 0,
-    duration: "3m 42s",
-  },
-  {
-    id: "h2",
-    date: "Today",
-    time: "06:30 AM",
-    machine: "CAT 980",
-    machineType: "Wheel Loader",
-    operator: "M. Chen",
-    status: "warning",
-    partsChecked: 6,
-    issuesFound: 2,
-    duration: "5m 10s",
-    notes: "Track tension slightly low on left side",
-    flaggedParts: ["Hydraulic Fluid", "Track Tension"],
-  },
-  {
-    id: "h3",
-    date: "Yesterday",
-    time: "07:45 AM",
-    machine: "CAT 777",
-    machineType: "Mining Truck",
-    operator: "R. Martinez",
-    status: "failed",
-    partsChecked: 6,
-    issuesFound: 4,
-    duration: "6m 55s",
-    notes: "Critical: Bucket teeth worn beyond spec, hydraulic leak detected",
-    flaggedParts: ["Bucket Teeth", "Hydraulic Cylinder", "Engine Oil", "Track Pad"],
-  },
-  {
-    id: "h4",
-    date: "Yesterday",
-    time: "02:10 PM",
-    machine: "CAT D6",
-    machineType: "Track-Type Tractor",
-    operator: "J. Davis",
-    status: "passed",
-    partsChecked: 6,
-    issuesFound: 0,
-    duration: "4m 02s",
-  },
-  {
-    id: "h5",
-    date: "Feb 26",
-    time: "09:00 AM",
-    machine: "CAT D8",
-    machineType: "Large Dozer",
-    operator: "K. Thompson",
-    status: "warning",
-    partsChecked: 6,
-    issuesFound: 1,
-    duration: "4m 28s",
-    notes: "Swing bearing needs lubrication",
-    flaggedParts: ["Swing Bearing"],
-  },
-  {
-    id: "h6",
-    date: "Feb 26",
-    time: "11:30 AM",
-    machine: "CAT 140",
-    machineType: "Motor Grader",
-    operator: "M. Chen",
-    status: "passed",
-    partsChecked: 6,
-    issuesFound: 0,
-    duration: "3m 18s",
-  },
-  {
-    id: "h7",
-    date: "Feb 25",
-    time: "07:15 AM",
-    machine: "CAT 320",
-    machineType: "Hydraulic Excavator",
-    operator: "J. Davis",
-    status: "passed",
-    partsChecked: 6,
-    issuesFound: 0,
-    duration: "3m 55s",
-  },
-  {
-    id: "h8",
-    date: "Feb 25",
-    time: "03:40 PM",
-    machine: "CAT 777",
-    machineType: "Mining Truck",
-    operator: "R. Martinez",
-    status: "warning",
-    partsChecked: 6,
-    issuesFound: 2,
-    duration: "5m 44s",
-    flaggedParts: ["Engine Oil Level", "Bucket Teeth"],
-  },
-];
+import { useInspection } from "../context/InspectionContext";
+import type { InspectionResult } from "../data/types";
 
 const statusConfig = {
   passed: {
@@ -157,8 +38,8 @@ const statusConfig = {
   },
 };
 
-function groupByDate(entries: HistoryEntry[]) {
-  const groups: Record<string, HistoryEntry[]> = {};
+function groupByDate(entries: InspectionResult[]) {
+  const groups: Record<string, InspectionResult[]> = {};
   entries.forEach((entry) => {
     if (!groups[entry.date]) groups[entry.date] = [];
     groups[entry.date].push(entry);
@@ -168,13 +49,17 @@ function groupByDate(entries: HistoryEntry[]) {
 
 export function MaintenanceHistory() {
   const navigate = useNavigate();
+  const { state } = useInspection();
+  const historyData = state.history;
   const [filter, setFilter] = useState<"all" | "passed" | "warning" | "failed">("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const filtered = historyData.filter((h) => filter === "all" || h.status === filter);
   const grouped = groupByDate(filtered);
 
-  const passRate = Math.round((historyData.filter((h) => h.status === "passed").length / historyData.length) * 100);
+  const passRate = historyData.length > 0
+    ? Math.round((historyData.filter((h) => h.status === "passed").length / historyData.length) * 100)
+    : 0;
   const totalIssues = historyData.reduce((sum, h) => sum + h.issuesFound, 0);
 
   return (

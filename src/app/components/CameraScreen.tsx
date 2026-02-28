@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router";
+import { useInspection } from "../context/InspectionContext";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft,
@@ -19,14 +20,7 @@ import {
   ScanLine,
 } from "lucide-react";
 
-const machineNames: Record<string, string> = {
-  "cat-320": "CAT 320 Excavator",
-  "cat-d6": "CAT D6 Dozer",
-  "cat-777": "CAT 777 Mining Truck",
-  "cat-980": "CAT 980 Wheel Loader",
-  "cat-d8": "CAT D8 Large Dozer",
-  "cat-140": "CAT 140 Motor Grader",
-};
+// machineNames removed — derived from context below
 
 interface ChecklistStep {
   id: number;
@@ -105,7 +99,10 @@ const buildChecklist = (): ChecklistStep[] => [
 export function CameraScreen() {
   const navigate = useNavigate();
   const { machineId } = useParams();
-  const machineName = machineNames[machineId ?? "cat-320"] ?? "CAT 320 Excavator";
+  const { state, dispatch } = useInspection();
+  const machine = state.machines.find((m) => m.id === (machineId ?? "cat-320"));
+  const machineName = machine ? `${machine.model} ${machine.type}` : "CAT 320 Excavator";
+  const dispatchedRef = useRef(false);
 
   const [steps, setSteps] = useState<ChecklistStep[]>(buildChecklist());
   const [sheetExpanded, setSheetExpanded] = useState(false);
@@ -193,8 +190,33 @@ export function CameraScreen() {
     [cameraReady]
   );
 
+  // Dispatch inspection result when scan completes
+  useEffect(() => {
+    if (!showSuccess || dispatchedRef.current) return;
+    dispatchedRef.current = true;
+    const now = new Date();
+    dispatch({
+      type: "COMPLETE_INSPECTION",
+      payload: {
+        id: `h-${Date.now()}`,
+        date: "Today",
+        time: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+        machineId: machineId ?? "cat-320",
+        machine: machine?.model ?? "CAT 320",
+        machineType: machine?.type ?? "Hydraulic Excavator",
+        operator: "J. Davis",
+        status: "passed",
+        partsChecked: steps.length,
+        issuesFound: 0,
+        duration: "~22s",
+        timestamp: Date.now(),
+      },
+    });
+  }, [showSuccess]);
+
   const resetScan = () => {
     clearTimers();
+    dispatchedRef.current = false;
     setShowSuccess(false);
     setScanStarted(false);
     setScanning(false);

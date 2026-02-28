@@ -3,69 +3,7 @@ import { useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Search, Bell, ChevronRight, Clock, AlertTriangle, CheckCircle2, Filter } from "lucide-react";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
-
-const machines = [
-  {
-    id: "cat-320",
-    model: "CAT 320",
-    type: "Hydraulic Excavator",
-    image: "https://images.unsplash.com/photo-1759950345011-ee5a96640e00?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxleGNhdmF0b3IlMjBjb25zdHJ1Y3Rpb24lMjBzaXRlJTIwaGVhdnklMjBlcXVpcG1lbnR8ZW58MXx8fHwxNzcyMjU5MTUzfDA&ixlib=rb-4.1.0&q=80&w=400",
-    status: "needs-check",
-    lastCheck: "3 days ago",
-    hoursUntilService: 47,
-    alerts: 2,
-  },
-  {
-    id: "cat-d6",
-    model: "CAT D6",
-    type: "Track-Type Tractor",
-    image: "https://images.unsplash.com/photo-1690915788747-a772131e0fac?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxjcmF3bGVyJTIwZG96ZXIlMjB0cmFjayUyMG1hY2hpbmUlMjBpbmR1c3RyaWFsfGVufDF8fHx8MTc3MjI1OTE2MHww&ixlib=rb-4.1.0&q=80&w=400",
-    status: "good",
-    lastCheck: "Today",
-    hoursUntilService: 312,
-    alerts: 0,
-  },
-  {
-    id: "cat-777",
-    model: "CAT 777",
-    type: "Mining Truck",
-    image: "https://images.unsplash.com/photo-1582280871722-424e91cbee8b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxkdW1wJTIwdHJ1Y2slMjBtaW5pbmclMjB5ZWxsb3clMjBoZWF2eXxlbnwxfHx8fDE3NzIyNTkxNTd8MA&ixlib=rb-4.1.0&q=80&w=400",
-    status: "critical",
-    lastCheck: "8 days ago",
-    hoursUntilService: 2,
-    alerts: 5,
-  },
-  {
-    id: "cat-980",
-    model: "CAT 980",
-    type: "Wheel Loader",
-    image: "https://images.unsplash.com/photo-1759850425285-46f70357253d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHx3aGVlbCUyMGxvYWRlciUyMGNvbnN0cnVjdGlvbiUyMGVxdWlwbWVudHxlbnwxfHx8fDE3NzIxOTU5NTV8MA&ixlib=rb-4.1.0&q=80&w=400",
-    status: "good",
-    lastCheck: "Yesterday",
-    hoursUntilService: 189,
-    alerts: 0,
-  },
-  {
-    id: "cat-d8",
-    model: "CAT D8",
-    type: "Large Dozer",
-    image: "https://images.unsplash.com/photo-1621922688758-359fc864071e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidWxsZG96ZXIlMjB5ZWxsb3clMjBDQVQlMjBoZWF2eSUyMG1hY2hpbmVyeXxlbnwxfHx8fDE3NzIyNTkxNTZ8MA&ixlib=rb-4.1.0&q=80&w=400",
-    status: "needs-check",
-    lastCheck: "5 days ago",
-    hoursUntilService: 98,
-    alerts: 1,
-  },
-  {
-    id: "cat-140",
-    model: "CAT 140",
-    type: "Motor Grader",
-    image: "https://images.unsplash.com/photo-1693064203616-2e78760f5df7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxtb3RvciUyMGdyYWRlciUyMHJvYWQlMjBjb25zdHJ1Y3Rpb24lMjBtYWNoaW5lfGVufDF8fHx8MTc3MjI1OTE1OHww&ixlib=rb-4.1.0&q=80&w=400",
-    status: "good",
-    lastCheck: "2 days ago",
-    hoursUntilService: 234,
-    alerts: 0,
-  },
-];
+import { useInspection } from "../context/InspectionContext";
 
 const statusConfig = {
   good: { label: "Good", color: "#22C55E", bg: "rgba(34,197,94,0.12)" },
@@ -75,8 +13,13 @@ const statusConfig = {
 
 export function MachineSelection() {
   const navigate = useNavigate();
+  const { state } = useInspection();
+  const machines = state.machines;
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "critical" | "needs-check" | "good">("all");
+
+  const alertsCount = machines.reduce((sum, m) => sum + m.alerts, 0);
+  const dueTodayCount = machines.filter((m) => m.status === "needs-check" || m.status === "critical").length;
 
   const filtered = machines.filter((m) => {
     const matchSearch =
@@ -121,9 +64,9 @@ export function MachineSelection() {
         {/* Stats row */}
         <div className="flex gap-2.5 mt-4">
           {[
-            { label: "Active Units", value: "6", color: "#FFCD11" },
-            { label: "Alerts", value: "8", color: "#EF4444" },
-            { label: "Due Today", value: "2", color: "#F97316" },
+            { label: "Active Units", value: String(machines.length), color: "#FFCD11" },
+            { label: "Alerts", value: String(alertsCount), color: "#EF4444" },
+            { label: "Due Today", value: String(dueTodayCount), color: "#F97316" },
           ].map((stat) => (
             <div
               key={stat.label}
