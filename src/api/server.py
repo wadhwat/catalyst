@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import logging
 import os
 import shutil
 import tempfile
@@ -7,10 +9,15 @@ from typing import Any, Dict, List
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
+from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
+from src.memory.supermemory_client import SupermemoryClient
+from src.report.generate_baseline import generate_baseline
 from src.utils.images import normalize_image_to_frame, write_blank_frame
 from src.utils.video import sample_video_frames
 
 app = FastAPI(title='CATalyst Inspect API')
+logger = logging.getLogger(__name__)
+memory_client = SupermemoryClient()
 
 
 @app.get('/health')
@@ -41,11 +48,29 @@ def _is_image(filename: str, content_type: str | None) -> bool:
     return ext in {'.jpg', '.jpeg', '.png', '.bmp', '.gif', '.webp'}
 
 
+def _sha256_file(path: str) -> str | None:
+    try:
+        digest = hashlib.sha256()
+        with open(path, 'rb') as handle:
+            for chunk in iter(lambda: handle.read(8192), b''):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except Exception as exc:
+        logger.warning('Failed to hash %s: %s', path, exc)
+        return None
+
+
+def _memory_enabled() -> bool:
+    return bool(memory_client.api_key and memory_client.base_url)
+
+
 @app.post('/inspect')
 async def inspect(
     machine_type: str = Form(...),
     niche: str = Form(...),
     client_trace_id: str = Form(...),
+    vin: str = Form(...),
+    engineer_notes: str | None = Form(None),
     file: UploadFile = File(...),
 ) -> Dict[str, Any]:
     if file is None:
@@ -75,37 +100,78 @@ async def inspect(
         frame_warning = f'frame extraction failed; generated blank frame ({exc})'
         evidence_frames = [write_blank_frame(temp_dir)]
 
-    stub_report = {
-        'summary': {
-            'status': 'UNKNOWN',
-            'notes': 'Stub report (no scoring yet).',
-        },
-        'items': [
-            {
-                'id': 'radiator_debris',
-                'status': 'UNKNOWN',
-                'notes': 'Stub item.',
-            },
-            {
-                'id': 'hose_leak',
-                'status': 'UNKNOWN',
-                'notes': 'Stub item.',
-            },
-        ],
+    scores = {'radiator_debris': 0.0, 'hose_leak': 0.0}
+    baseline_report = generate_baseline(scores, evidence_frames)
+    report_payload = baseline_report.model_dump()
+
+    memory_context: List[Dict[str, Any]] = []
+    memory_write_status: Dict[str, str] = {
+        'session_summary': 'skipped',
+        'engineer_note': 'skipped',
     }
+
+    if _memory_enabled():
+        memory_context = memory_client.search_memories(tags=[f'vin:{vin}'], limit=5)
+    else:
+        logger.warning('Supermemory disabled (missing SUPERMEMORY_API_KEY or SUPERMEMORY_BASE_URL)')
+        memory_write_status['session_summary'] = 'skipped_missing_config'
+        memory_write_status['engineer_note'] = 'skipped_missing_config'
+
+    references: List[MemoryReference] = []
+    saved_hash = _sha256_file(saved_path)
+    if saved_hash:
+        references.append(MemoryReference(filename=filename, sha256=saved_hash))
+    for frame_name in evidence_frames:
+        frame_path = os.path.join(temp_dir, frame_name)
+        frame_hash = _sha256_file(frame_path)
+        if frame_hash:
+            references.append(MemoryReference(filename=frame_name, sha256=frame_hash))
+
+    if _memory_enabled():
+        items = [
+            ItemSummary(id=item.id, status=item.status, notes=item.notes)
+            for item in baseline_report.items
+        ]
+        session_summary = SessionSummary(
+            vin=vin,
+            client_trace_id=client_trace_id,
+            summary_status=baseline_report.summary.status,
+            items=items,
+            references=references,
+        )
+        created = memory_client.create_memory(
+            kind='session_summary',
+            content=session_summary.model_dump(mode='json'),
+            tags=[f'vin:{vin}', 'kind:session_summary'],
+            metadata={'vin': vin, 'client_trace_id': client_trace_id},
+        )
+        memory_write_status['session_summary'] = 'ok' if created else 'error'
+
+        if engineer_notes and engineer_notes.strip():
+            note = EngineerNote(vin=vin, note=engineer_notes.strip())
+            created_note = memory_client.create_memory(
+                kind='engineer_note',
+                content=note.model_dump(mode='json'),
+                tags=[f'vin:{vin}', 'kind:engineer_note'],
+                metadata={'vin': vin, 'client_trace_id': client_trace_id},
+            )
+            memory_write_status['engineer_note'] = 'ok' if created_note else 'error'
 
     return {
         'client_trace_id': client_trace_id,
         'received': {
             'machine_type': machine_type,
             'niche': niche,
+            'vin': vin,
             'filename': filename,
             'content_type': file.content_type,
             'saved_path': saved_path,
         },
         'evidence_frames': evidence_frames,
         'frame_warning': frame_warning,
-        'report': stub_report,
+        'report': report_payload,
+        'memory_context': memory_context,
+        'memory_write_status': memory_write_status,
     }
 
 
