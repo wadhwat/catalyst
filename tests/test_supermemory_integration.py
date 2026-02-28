@@ -26,9 +26,12 @@ def _load_env_from_repo_root() -> None:
 
 
 def _client() -> Supermemory:
+    run_live = os.getenv('SUPERMEMORY_RUN_LIVE_TESTS', '').lower() in {'1', 'true', 'yes'}
+    if not run_live:
+        pytest.skip('Live Supermemory tests disabled (set SUPERMEMORY_RUN_LIVE_TESTS=1)')
     _load_env_from_repo_root()
     api_key = os.getenv('SUPERMEMORY_API_KEY')
-    if not api_key:
+    if not api_key or not api_key.strip():
         pytest.skip('SUPERMEMORY_API_KEY not set')
     base_url = os.getenv('SUPERMEMORY_BASE_URL') or os.getenv('SUPERMEMORY_API_URL')
     if base_url:
