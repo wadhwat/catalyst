@@ -115,6 +115,8 @@ export function CameraScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [detectedIds, setDetectedIds] = useState<Set<number>>(new Set());
   const [zoomLevel, setZoomLevel] = useState(1.0);
+  const [cameraReady, setCameraReady] = useState(false);
+  const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const completedCount = steps.filter((s) => s.status === "verified").length;
@@ -156,7 +158,40 @@ export function CameraScreen() {
     scanTimerRef.current.push(t);
   }, []);
 
+  // Request camera on mount, clean up on unmount
+  useEffect(() => {
+    let cancelled = false;
+    navigator.mediaDevices
+      ?.getUserMedia({ video: { facingMode: "environment" } })
+      .then((stream) => {
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        setCameraReady(true);
+      })
+      .catch(() => {
+        // Camera unavailable or denied — fallback image will show
+      });
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  }, []);
+
   useEffect(() => () => clearTimers(), []);
+
+  // Callback ref: attach the stream as soon as the <video> element mounts
+  const videoCallbackRef = useCallback(
+    (node: HTMLVideoElement | null) => {
+      if (node && streamRef.current) {
+        node.srcObject = streamRef.current;
+      }
+    },
+    [cameraReady]
+  );
 
   const resetScan = () => {
     clearTimers();
@@ -183,11 +218,21 @@ export function CameraScreen() {
           className="absolute inset-0 transition-transform duration-700"
           style={{ transform: `scale(${zoomLevel})` }}
         >
-          <img
-            src="https://images.unsplash.com/photo-1614303936041-0ad85737faef?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxleGNhdmF0b3IlMjBidWNrZXQlMjBhcm0lMjBjbG9zZSUyMHVwJTIwbWFjaGluZXJ5fGVufDF8fHx8MTc3MjI1OTE2MXww&ixlib=rb-4.1.0&q=80&w=800"
-            alt="Camera feed"
-            className="w-full h-full object-cover"
-          />
+          {cameraReady ? (
+            <video
+              ref={videoCallbackRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <img
+              src="https://images.unsplash.com/photo-1614303936041-0ad85737faef?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxleGNhdmF0b3IlMjBidWNrZXQlMjBhcm0lMjBjbG9zZSUyMHVwJTIwbWFjaGluZXJ5fGVufDF8fHx8MTc3MjI1OTE2MXww&ixlib=rb-4.1.0&q=80&w=800"
+              alt="Camera feed fallback"
+              className="w-full h-full object-cover"
+            />
+          )}
           <div
             className="absolute inset-0"
             style={{ background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.5) 100%)" }}
