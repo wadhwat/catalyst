@@ -96,7 +96,7 @@ export function MachineSelection() {
         <div className="flex items-center justify-between mb-1">
           <div>
             <p className="text-[#FFCD11] text-[11px] tracking-[0.15em] uppercase font-semibold">
-              CAT Fleet Vision
+              Catalyst
             </p>
             <h1
               className="text-white mt-0.5"
