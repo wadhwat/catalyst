@@ -6,3 +6,4 @@ opencv-python-headless>=4.9
 pytest>=7.0
 supermemory>=3.27
 PyJWT>=2.9
+email-validator>=2.0

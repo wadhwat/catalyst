@@ -40,3 +40,20 @@ class EngineerNote(BaseModel):
     note: str
     observed_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+class MemoryAddRequest(BaseModel):
+    kind: str
+    content: dict
+    tags: list[str] = Field(default_factory=list)
+    metadata: Optional[dict] = None
+
+
+class MemorySearchRequest(BaseModel):
+    query: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    limit: int = 5
+    metadata: Optional[dict] = None
+
+
+class MemorySearchResponse(BaseModel):
+    results: list[dict]
