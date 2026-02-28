@@ -7,8 +7,9 @@ import shutil
 import tempfile
 from typing import Any, Dict, List
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
+from src.auth.routes import get_current_user, router as auth_router
 from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
 from src.memory.supermemory_client import SupermemoryClient
 from src.report.generate_baseline import generate_baseline
@@ -16,6 +17,7 @@ from src.utils.images import normalize_image_to_frame, write_blank_frame
 from src.utils.video import sample_video_frames
 
 app = FastAPI(title='CATalyst Inspect API')
+app.include_router(auth_router)
 logger = logging.getLogger(__name__)
 memory_client = SupermemoryClient()
 
@@ -72,6 +74,7 @@ async def inspect(
     vin: str = Form(...),
     engineer_notes: str | None = Form(None),
     file: UploadFile = File(...),
+    user=Depends(get_current_user),
 ) -> Dict[str, Any]:
     if file is None:
         raise HTTPException(status_code=400, detail='file is required')
@@ -110,8 +113,12 @@ async def inspect(
         'engineer_note': 'skipped',
     }
 
+    memory_tags = [f'vin:{vin}']
+    if user:
+        memory_tags.append(f'user:{user.id}')
+
     if _memory_enabled():
-        memory_context = memory_client.search_memories(tags=[f'vin:{vin}'], limit=5)
+        memory_context = memory_client.search_memories(tags=memory_tags, limit=5)
     else:
         logger.warning('Supermemory disabled (missing SUPERMEMORY_API_KEY or SUPERMEMORY_BASE_URL)')
         memory_write_status['session_summary'] = 'skipped_missing_config'
@@ -142,7 +149,7 @@ async def inspect(
         created = memory_client.create_memory(
             kind='session_summary',
             content=session_summary.model_dump(mode='json'),
-            tags=[f'vin:{vin}', 'kind:session_summary'],
+            tags=[*memory_tags, 'kind:session_summary'],
             metadata={'vin': vin, 'client_trace_id': client_trace_id},
         )
         memory_write_status['session_summary'] = 'ok' if created else 'error'
@@ -152,7 +159,7 @@ async def inspect(
             created_note = memory_client.create_memory(
                 kind='engineer_note',
                 content=note.model_dump(mode='json'),
-                tags=[f'vin:{vin}', 'kind:engineer_note'],
+                tags=[*memory_tags, 'kind:engineer_note'],
                 metadata={'vin': vin, 'client_trace_id': client_trace_id},
             )
             memory_write_status['engineer_note'] = 'ok' if created_note else 'error'
