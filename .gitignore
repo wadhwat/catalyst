@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+.pytest_cache/
+.mypy_cache/
+.env
+.env.*
+node_modules/
+dist/
+build/
+.expo/
+.DS_Store
