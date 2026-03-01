@@ -15,7 +15,10 @@ def _row_to_report(row) -> dict:
     report_json = row['report_json']
     if report_json:
         try:
-            return json.loads(report_json)
+            report = json.loads(report_json)
+            if row['narrative_text'] and 'narrative' not in report:
+                report['narrative'] = row['narrative_text']
+            return report
         except Exception:
             pass
 
@@ -31,7 +34,7 @@ def _row_to_report(row) -> dict:
     for item in items:
         if 'evidence_urls' not in item:
             item['evidence_urls'] = evidence_urls
-    return {
+    report = {
         'vin': row['vin'],
         'client_trace_id': row['id'],
         'observed_at': row['observed_at'],
@@ -41,6 +44,9 @@ def _row_to_report(row) -> dict:
         },
         'items': items,
     }
+    if row['narrative_text']:
+        report['narrative'] = row['narrative_text']
+    return report
 
 
 @router.get('', response_model=List[dict])

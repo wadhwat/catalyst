@@ -86,6 +86,7 @@ export function MachineDetailScreen({
           notes: item.notes,
           evidence_urls: item.evidence,
         })),
+        narrative: response.narrative ?? null,
       };
 
       navigation.navigate('InspectionReport', {

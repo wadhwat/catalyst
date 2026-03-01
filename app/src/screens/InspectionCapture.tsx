@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, CameraView } from 'expo-camera';
 import * as Crypto from 'expo-crypto';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -17,17 +17,29 @@ export function InspectionCaptureScreen({
   const { machineId } = route.params;
   const { machines } = useMachines();
   const machine = machines.find((item) => item.id === machineId);
-  const [permission, requestPermission] = useCameraPermissions();
+  const [permission, setPermission] = useState<{ granted: boolean; canAskAgain?: boolean } | null>(null);
   const cameraRef = useRef<CameraView | null>(null);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (!permission) {
-      requestPermission();
-    }
-  }, [permission, requestPermission]);
+    let active = true;
+    Camera.getCameraPermissionsAsync()
+      .then((response) => {
+        if (active) {
+          setPermission(response);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPermission({ granted: false, canAskAgain: true });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -63,7 +75,17 @@ export function InspectionCaptureScreen({
     return (
       <Screen style={styles.container}>
         <Text style={styles.infoText}>Camera access is required to start an inspection.</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={async () => {
+            try {
+              const response = await Camera.requestCameraPermissionsAsync();
+              setPermission(response);
+            } catch {
+              setPermission({ granted: false, canAskAgain: false });
+            }
+          }}
+        >
           <Text style={styles.primaryButtonText}>Enable Camera</Text>
         </TouchableOpacity>
       </Screen>
@@ -101,6 +123,7 @@ export function InspectionCaptureScreen({
           notes: item.notes,
           evidence_urls: item.evidence,
         })),
+        narrative: response.narrative ?? null,
       };
 
       navigation.replace('InspectionReport', {

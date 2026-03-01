@@ -16,4 +16,5 @@ export type InspectionReportContent = {
   observed_at?: string;
   summary: ReportSummary;
   items: ReportItem[];
+  narrative?: string | null;
 };
