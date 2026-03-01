@@ -11,5 +11,6 @@ export type RootStackParamList = {
     machineId: string;
     inspectionId?: string;
     report?: InspectionReportContent;
+    reportPdfUrl?: string | null;
   };
 };

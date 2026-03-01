@@ -14,6 +14,8 @@ import cv2
 import httpx
 import numpy as np
 
+from pydantic import ValidationError
+
 from src.inspection.schema import FrameError, MappedDefect, VlmFrameResult, YoloDetection
 
 logger = logging.getLogger(__name__)
@@ -35,6 +37,41 @@ def _get_concurrency() -> int:
         return int(os.getenv("INFERENCE_CONCURRENCY_LIMIT", "5"))
     except ValueError:
         return 5
+
+
+def _normalize_mapped_defect(d: dict) -> MappedDefect | None:
+    """Build MappedDefect from possibly malformed EC2/VLM output."""
+    try:
+        bbox_raw = d.get("bbox") or d.get("bbox_norm") or [0.5, 0.5, 0.1, 0.1]
+        bbox = [float(x) for x in bbox_raw[:4]] if isinstance(bbox_raw, (list, tuple)) else [0.5, 0.5, 0.1, 0.1]
+        confirmed_raw = d.get("confirmed", True)
+        confirmed = (
+            str(confirmed_raw).lower() in ("true", "yes", "1")
+            if isinstance(confirmed_raw, str)
+            else bool(confirmed_raw)
+        )
+        return MappedDefect(
+            detection_id=int(d.get("detection_id", 0)),
+            checklist_item=str(d.get("checklist_item") or d.get("component") or "Overall machine"),
+            defect_type=str(d.get("defect_type") or d.get("defect") or "unknown"),
+            confirmed=confirmed,
+            severity=str(d.get("severity") or "NORMAL"),
+            description=str(d.get("description") or "No description"),
+            bbox=bbox,
+        )
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+async def check_inference_health() -> bool:
+    """Verify the EC2 inference service is reachable before processing."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{_get_base_url()}/health")
+            return response.status_code == 200
+    except Exception as exc:
+        logger.warning("Inference health check failed: %s", exc)
+        return False
 
 
 async def call_inference_service(
@@ -78,9 +115,16 @@ async def call_inference_service(
                 for d in data.get("detections", [])
             ]
 
-            mapped_defects = [
-                MappedDefect(**d) for d in data.get("mapped_defects", [])
-            ]
+            mapped_defects = []
+            for d in data.get("mapped_defects", []):
+                try:
+                    mapped_defects.append(MappedDefect(**d))
+                except (ValidationError, TypeError) as e:
+                    md = _normalize_mapped_defect(d)
+                    if md:
+                        mapped_defects.append(md)
+                    else:
+                        logger.warning("Dropped malformed mapped_defect: %s (%s)", d, e)
 
             error = data.get("error")
             return detections, VlmFrameResult(

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+
+from dotenv import load_dotenv
+
+load_dotenv()
 import json
 import logging
 import os
@@ -20,10 +24,12 @@ from fastapi.responses import FileResponse
 from src.auth import db
 from src.auth.routes import get_current_user, router as auth_router
 from src.inspection.aggregation import aggregate_findings, compute_iou
-from src.inspection.inference_client import process_frames
-from src.inspection.llm_reviewer import review_report
+from src.inspection.inference_client import check_inference_health, process_frames
 from src.inspection.narrative_builder import build_narrative
+from src.inspection.parts import load_parts
 from src.inspection.report_builder import build_report
+from src.inspection.report_llm import generate_report_via_llm
+from src.inspection.report_pdf import generate_report_pdf
 from src.inspection.routes import router as inspection_router
 from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
 from src.memory.routes import router as memory_router
@@ -31,6 +37,7 @@ from src.memory.supermemory_client import SupermemoryClient
 from src.machines.routes import router as machines_router
 from src.preferences.routes import router as preferences_router
 from src.reports.routes import router as reports_router
+from src.api.tts_routes import router as tts_router
 from src.utils.images import load_image, normalize_image_to_frame, resize_max, write_blank_frame
 from src.utils.video import sample_video_frames
 
@@ -41,6 +48,7 @@ app.include_router(memory_router)
 app.include_router(machines_router)
 app.include_router(reports_router)
 app.include_router(preferences_router)
+app.include_router(tts_router)
 logger = logging.getLogger(__name__)
 memory_client = SupermemoryClient()
 INSPECTIONS_DIR = Path('data') / 'inspections'
@@ -164,6 +172,15 @@ async def inspect(
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f'failed to save upload: {exc}')
 
+        if not await check_inference_health():
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    'EC2 inference service is unreachable. Check INFERENCE_SERVICE_URL '
+                    'and ensure the GPU server is running.'
+                ),
+            )
+
         t_total_start = time.perf_counter()
         fps_sample_rate = int(os.getenv('INSPECT_FPS_SAMPLE_RATE', '1'))
         max_frames = int(os.getenv('INSPECT_MAX_FRAMES', '12'))
@@ -249,9 +266,14 @@ async def inspect(
                             if compute_iou(det.bbox, finding.bbox) > 0.3:
                                 finding.confidence = max(finding.confidence, det.confidence)
 
-        preliminary_report = build_report(findings, evidence_urls)
-        reviewed_report = await review_report(findings, preliminary_report, evidence_urls)
-        report_payload = reviewed_report.model_dump()
+        parts = load_parts()
+        try:
+            report_obj, _ = await generate_report_via_llm(findings, evidence_urls, parts=parts)
+            report_payload = report_obj.model_dump()
+        except Exception as exc:
+            logger.warning('GPT-4 report failed, using fallback: %s', exc)
+            report_obj = build_report(findings, evidence_urls)
+            report_payload = report_obj.model_dump()
         for item in report_payload.get('items', []):
             if not item.get('evidence'):
                 item['evidence'] = list(evidence_urls)
@@ -307,6 +329,7 @@ async def inspect(
                     'status': item.get('status'),
                     'notes': item.get('notes'),
                     'evidence_urls': item.get('evidence') or list(evidence_urls),
+                    'recommended_parts': item.get('recommended_parts') or [],
                 }
             )
         inspection_report = {
@@ -322,6 +345,20 @@ async def inspect(
             narrative_text = await build_narrative(inspection_report, history_reports)
             if narrative_text:
                 inspection_report['narrative'] = narrative_text
+
+        report_pdf_url = None
+        try:
+            pdf_path = inspection_dir / 'report.pdf'
+            if generate_report_pdf(
+                report_obj,
+                inspection_id=inspection_id,
+                vin=vin,
+                observed_at=observed_at,
+                output_path=pdf_path,
+            ):
+                report_pdf_url = f'/media/inspections/{inspection_id}/report.pdf'
+        except Exception as exc:
+            logger.warning('PDF generation failed: %s', exc)
 
         if _memory_enabled():
             items = [
@@ -436,6 +473,7 @@ async def inspect(
         return {
             'inspection_id': inspection_id,
             'client_trace_id': client_trace_id,
+            'report_pdf_url': report_pdf_url,
             'received': {
                 'machine_type': machine_type,
                 'niche': niche,

@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Camera, CameraView } from 'expo-camera';
 import * as Crypto from 'expo-crypto';
@@ -9,6 +9,32 @@ import { uploadInspection } from '../api/inspect';
 import { InspectionReportContent } from '../types/report';
 import { useMachines } from '../machines/MachinesContext';
 import { Screen } from '../components/Screen';
+import { matchVoiceCommand } from '../utils/voiceCommands';
+import { speak } from '../utils/tts';
+
+let ExpoSpeechRecognitionModule: typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule | null = null;
+let useSpeechRecognitionEvent: typeof import('expo-speech-recognition').useSpeechRecognitionEvent | null = null;
+try {
+  const mod = require('expo-speech-recognition');
+  ExpoSpeechRecognitionModule = mod.ExpoSpeechRecognitionModule;
+  useSpeechRecognitionEvent = mod.useSpeechRecognitionEvent;
+} catch {
+  // expo-speech-recognition not available (e.g. Expo Go)
+}
+
+function formatInspectionError(error: unknown): string {
+  const msg = String(error);
+  if (msg.includes('fetch') || msg.includes('Network request failed') || msg.includes('Failed to fetch')) {
+    return 'Could not reach the server. Check your network and that the backend is running.';
+  }
+  if (msg.includes('500') || msg.includes('Internal Server Error')) {
+    return 'Server error. The inspection service may be unavailable.';
+  }
+  if (msg.includes('502') || msg.includes('503')) {
+    return 'Service temporarily unavailable. Try again later.';
+  }
+  return msg || 'Something went wrong. Please try again.';
+}
 
 export function InspectionCaptureScreen({
   navigation,
@@ -22,6 +48,62 @@ export function InspectionCaptureScreen({
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const handleStartRef = useRef<() => Promise<void>>(null as any);
+  const handleStopRef = useRef<() => Promise<void>>(null as any);
+
+  const handleStart = useCallback(async () => {
+    if (recording || uploading || !cameraRef.current) return;
+    setRecording(true);
+    try {
+      const video = await cameraRef.current.recordAsync({ maxDuration: 300 });
+      if (!video?.uri) return;
+      setUploading(true);
+      const clientTraceId = Crypto.randomUUID();
+      const response = await uploadInspection({
+        fileUri: video.uri,
+        fileName: `inspection-${clientTraceId}.mp4`,
+        mimeType: 'video/mp4',
+        machineType: machine!.machineType,
+        niche: machine!.niche,
+        vin: machine!.vin,
+        clientTraceId,
+      });
+      const report: InspectionReportContent = {
+        vin: machine!.vin,
+        client_trace_id: response.client_trace_id,
+        observed_at: new Date().toISOString(),
+        summary: response.report.summary,
+        items: response.report.items.map((item) => ({
+          id: item.id,
+          status: item.status,
+          notes: item.notes,
+          evidence_urls: item.evidence,
+          recommended_parts: item.recommended_parts,
+        })),
+        narrative: response.narrative ?? null,
+      };
+      navigation.replace('InspectionReport', {
+        machineId: machine!.id,
+        inspectionId: response.client_trace_id,
+        report,
+        reportPdfUrl: response.report_pdf_url ?? null,
+      });
+    } catch (error) {
+      const message = formatInspectionError(error);
+      Alert.alert('Inspection failed', message);
+    } finally {
+      setUploading(false);
+      setRecording(false);
+    }
+  }, [machine, recording, uploading, navigation]);
+
+  const handleStop = useCallback(() => {
+    if (!recording || !cameraRef.current) return;
+    cameraRef.current.stopRecording();
+    setRecording(false);
+  }, [recording]);
 
   useEffect(() => {
     let active = true;
@@ -54,6 +136,61 @@ export function InspectionCaptureScreen({
       if (timer) clearInterval(timer);
     };
   }, [recording]);
+
+  useEffect(() => {
+    handleStartRef.current = handleStart;
+    handleStopRef.current = handleStop;
+  });
+
+  useEffect(() => {
+    if (!machine || !ExpoSpeechRecognitionModule || !permission?.granted || recording || uploading) return;
+    const resultHandler = (event: { results?: Array<{ transcript?: string }> }) => {
+      const t = event.results?.[0]?.transcript ?? '';
+      const cmd = matchVoiceCommand(t);
+      if (cmd === 'start') {
+        handleStartRef.current?.();
+        speak('Recording started');
+      } else if (cmd === 'stop') {
+        handleStopRef.current?.();
+        speak('Recording stopped');
+      }
+    };
+    const startListener = ExpoSpeechRecognitionModule.addListener('start', () => setListening(true));
+    const endListener = ExpoSpeechRecognitionModule.addListener('end', () => setListening(false));
+    const resultListener = ExpoSpeechRecognitionModule.addListener('result', resultHandler);
+    ExpoSpeechRecognitionModule.requestPermissionsAsync().then((r) => {
+      if (r.granted) {
+        setVoiceAvailable(true);
+        ExpoSpeechRecognitionModule!.start({
+          lang: 'en-US',
+          interimResults: true,
+          continuous: true,
+          contextualStrings: ['start video', 'stop video', 'start recording', 'stop recording'],
+        });
+      }
+    });
+    return () => {
+      startListener.remove();
+      endListener.remove();
+      resultListener.remove();
+      ExpoSpeechRecognitionModule?.stop?.();
+    };
+  }, [machine, permission?.granted, recording, uploading]);
+
+  const toggleVoice = useCallback(async () => {
+    if (!ExpoSpeechRecognitionModule || !voiceAvailable) return;
+    const state = await ExpoSpeechRecognitionModule.getStateAsync?.();
+    if (state?.status === 'recognizing') {
+      ExpoSpeechRecognitionModule.stop();
+    } else {
+      ExpoSpeechRecognitionModule.start({
+        lang: 'en-US',
+        interimResults: true,
+        continuous: true,
+        contextualStrings: ['start video', 'stop video', 'start recording', 'stop recording'],
+      });
+    }
+  }, [voiceAvailable]);
 
   if (!machine) {
     return (
@@ -92,59 +229,6 @@ export function InspectionCaptureScreen({
     );
   }
 
-  const handleStart = async () => {
-    if (recording || uploading || !cameraRef.current) return;
-    setRecording(true);
-    try {
-      const video = await cameraRef.current.recordAsync({
-        maxDuration: 300,
-      });
-      if (!video?.uri) return;
-      setUploading(true);
-      const clientTraceId = Crypto.randomUUID();
-      const response = await uploadInspection({
-        fileUri: video.uri,
-        fileName: `inspection-${clientTraceId}.mp4`,
-        mimeType: 'video/mp4',
-        machineType: machine.machineType,
-        niche: machine.niche,
-        vin: machine.vin,
-        clientTraceId,
-      });
-
-      const report: InspectionReportContent = {
-        vin: machine.vin,
-        client_trace_id: response.client_trace_id,
-        observed_at: new Date().toISOString(),
-        summary: response.report.summary,
-        items: response.report.items.map((item) => ({
-          id: item.id,
-          status: item.status,
-          notes: item.notes,
-          evidence_urls: item.evidence,
-        })),
-        narrative: response.narrative ?? null,
-      };
-
-      navigation.replace('InspectionReport', {
-        machineId: machine.id,
-        inspectionId: response.client_trace_id,
-        report,
-      });
-    } catch (error) {
-      Alert.alert('Inspection failed', String(error));
-    } finally {
-      setUploading(false);
-      setRecording(false);
-    }
-  };
-
-  const handleStop = async () => {
-    if (!recording || !cameraRef.current) return;
-    await cameraRef.current.stopRecording();
-    setRecording(false);
-  };
-
   const timerLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
 
   return (
@@ -160,14 +244,25 @@ export function InspectionCaptureScreen({
         <CameraView ref={cameraRef} style={styles.camera} facing="back" mode="video" />
         <View style={styles.overlay}>
           <Text style={styles.timer}>{timerLabel}</Text>
+          {voiceAvailable && !recording && !uploading ? (
+            <Text style={styles.voiceHint}>Say "start video" or "stop video" for hands-free</Text>
+          ) : null}
           <View style={styles.controls}>
+            {voiceAvailable && !uploading ? (
+              <TouchableOpacity style={styles.micButton} onPress={toggleVoice}>
+                <Text style={styles.micText}>{listening ? '🎤 Listening' : '🎤 Voice'}</Text>
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               style={[styles.controlButton, recording ? styles.stopButton : styles.startButton]}
               onPress={recording ? handleStop : handleStart}
               disabled={uploading}
             >
               {uploading ? (
-                <ActivityIndicator color="#1B1B1B" />
+                <View style={styles.uploadingRow}>
+                  <ActivityIndicator color="#1B1B1B" size="small" />
+                  <Text style={styles.uploadingText}>Uploading & processing…</Text>
+                </View>
               ) : (
                 <Text style={styles.controlText}>{recording ? 'Stop Inspection' : 'Start Recording'}</Text>
               )}
@@ -224,8 +319,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 12,
   },
+  voiceHint: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    marginBottom: 8,
+  },
   controls: {
     alignItems: 'center',
+    gap: 8,
+  },
+  micButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  micText: {
+    color: '#F4D35E',
+    fontSize: 12,
   },
   controlButton: {
     borderRadius: 18,
@@ -241,6 +350,16 @@ const styles = StyleSheet.create({
   controlText: {
     color: '#1B1B1B',
     fontWeight: '700',
+  },
+  uploadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  uploadingText: {
+    color: '#1B1B1B',
+    fontWeight: '600',
+    fontSize: 14,
   },
   infoText: {
     color: '#D1D5DB',

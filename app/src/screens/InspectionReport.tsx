@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../types/navigation';
@@ -8,6 +8,7 @@ import { getReportById } from '../api/reports';
 import { resolveMediaUrl } from '../api/client';
 import { useMachines } from '../machines/MachinesContext';
 import { Screen } from '../components/Screen';
+import { getPartSearchUrl } from '../utils/partsLinks';
 
 function formatItemLabel(id: string): string {
   return id
@@ -19,7 +20,7 @@ export function InspectionReportScreen({
   route,
   navigation,
 }: NativeStackScreenProps<RootStackParamList, 'InspectionReport'>) {
-  const { machineId, inspectionId, report: initialReport } = route.params;
+  const { machineId, inspectionId, report: initialReport, reportPdfUrl } = route.params;
   const { machines } = useMachines();
   const machine = machines.find((item) => item.id === machineId);
   const [report, setReport] = useState<InspectionReportContent | undefined>(initialReport);
@@ -76,6 +77,18 @@ export function InspectionReportScreen({
             {report.summary.notes ? (
               <Text style={styles.summaryNotes}>{report.summary.notes}</Text>
             ) : null}
+            {inspectionId ? (
+              <TouchableOpacity
+                style={styles.pdfButton}
+                onPress={() => {
+                  const pdfPath = reportPdfUrl ?? `/media/inspections/${inspectionId}/report.pdf`;
+                  const url = resolveMediaUrl(pdfPath);
+                  Linking.openURL(url).catch(() => Alert.alert('Could not open PDF', 'The report PDF could not be opened.'));
+                }}
+              >
+                <Text style={styles.pdfButtonText}>View PDF</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
           {report.narrative ? (
             <View style={styles.narrativeCard}>
@@ -104,6 +117,21 @@ export function InspectionReportScreen({
                     <View style={styles.flagContent}>
                       <Text style={styles.flagTitle}>{formatItemLabel(item.id)}</Text>
                       {item.notes ? <Text style={styles.flagNotes}>{item.notes}</Text> : null}
+                      {item.recommended_parts && item.recommended_parts.length > 0 ? (
+                        <View style={styles.recommendedPartsRow}>
+                          <Text style={styles.recommendedParts}>Recommended parts: </Text>
+                          {item.recommended_parts.map((pn, i) => (
+                            <React.Fragment key={pn}>
+                              {i > 0 ? <Text style={styles.recommendedParts}>, </Text> : null}
+                              <TouchableOpacity
+                                onPress={() => Linking.openURL(getPartSearchUrl(pn)).catch(() => {})}
+                              >
+                                <Text style={styles.partLink}>{pn}</Text>
+                              </TouchableOpacity>
+                            </React.Fragment>
+                          ))}
+                        </View>
+                      ) : null}
                       <TouchableOpacity
                         style={styles.resolveButton}
                         onPress={() =>
@@ -181,6 +209,19 @@ const styles = StyleSheet.create({
     color: '#D1D5DB',
     marginTop: 8,
   },
+  pdfButton: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#F4D35E',
+    borderRadius: 12,
+  },
+  pdfButtonText: {
+    color: '#1B1B1B',
+    fontWeight: '600',
+    fontSize: 14,
+  },
   narrativeCard: {
     backgroundColor: '#2A2A2A',
     borderRadius: 16,
@@ -236,6 +277,22 @@ const styles = StyleSheet.create({
   flagNotes: {
     color: '#D1D5DB',
     fontSize: 13,
+  },
+  recommendedPartsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 4,
+    gap: 2,
+  },
+  recommendedParts: {
+    color: '#F4D35E',
+    fontSize: 12,
+  },
+  partLink: {
+    color: '#60A5FA',
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
   resolveButton: {
     alignSelf: 'flex-start',

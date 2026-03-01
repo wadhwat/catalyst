@@ -1,5 +1,8 @@
 {
   "expo": {
+    "plugins": [
+      "expo-speech-recognition"
+    ],
     "name": "CATalyst Inspect",
     "slug": "catalyst-inspect",
     "version": "1.0.0",
@@ -10,15 +13,25 @@
       "resizeMode": "contain",
       "backgroundColor": "#1B1B1B"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
+      },
+      "bundleIdentifier": "com.anonymous.catalyst-inspect"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1B1B1B"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"

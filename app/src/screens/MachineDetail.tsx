@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
@@ -52,16 +52,19 @@ export function MachineDetailScreen({
     );
   }
 
-  const handleUploadRecorded = async () => {
+  const handleUploadMedia = async (type: 'video' | 'photo') => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['videos'],
+        mediaTypes: type === 'video' ? ['videos'] : ['images'],
+        quality: 0.8,
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       const fileUri = asset.uri;
-      const fileName = asset.fileName ?? `inspection-${Date.now()}.mp4`;
-      const mimeType = asset.mimeType ?? 'video/mp4';
+      const fallbackName = type === 'video' ? `inspection-${Date.now()}.mp4` : `inspection-${Date.now()}.jpg`;
+      const fallbackMime = type === 'video' ? 'video/mp4' : 'image/jpeg';
+      const fileName = asset.fileName ?? fallbackName;
+      const mimeType = asset.mimeType ?? fallbackMime;
 
       setUploading(true);
       const clientTraceId = Crypto.randomUUID();
@@ -85,6 +88,7 @@ export function MachineDetailScreen({
           status: item.status,
           notes: item.notes,
           evidence_urls: item.evidence,
+          recommended_parts: item.recommended_parts,
         })),
         narrative: response.narrative ?? null,
       };
@@ -93,6 +97,7 @@ export function MachineDetailScreen({
         machineId: machine.id,
         inspectionId: response.client_trace_id,
         report,
+        reportPdfUrl: response.report_pdf_url ?? null,
       });
     } catch (error) {
       Alert.alert('Upload failed', String(error));
@@ -123,14 +128,22 @@ export function MachineDetailScreen({
 
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={handleUploadRecorded}
+          onPress={() => handleUploadMedia('photo')}
           disabled={uploading}
         >
           {uploading ? (
             <ActivityIndicator color="#F4D35E" />
           ) : (
-            <Text style={styles.secondaryButtonText}>Upload Recorded Video</Text>
+            <Text style={styles.secondaryButtonText}>Upload Photo</Text>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={() => handleUploadMedia('video')}
+          disabled={uploading}
+        >
+          <Text style={styles.secondaryButtonText}>Upload Recorded Video</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
