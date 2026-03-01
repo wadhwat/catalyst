@@ -37,3 +37,13 @@ catalyst_*/
 tmp/
 temp/
 
+# EC2 inference sandbox (deploy separately; not part of main app)
+ec2_inference/
+
+# Secrets and credentials (never commit)
+*.pem
+*.key
+credentials.json
+secrets.json
+*.secret
+

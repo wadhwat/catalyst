@@ -11,6 +11,10 @@ class ReportItem(BaseModel):
     score: Optional[float] = None
     notes: Optional[str] = None
     evidence: List[str] = Field(default_factory=list)
+    recommended_parts: List[str] = Field(
+        default_factory=list,
+        description="Part numbers recommended for fixing defects (from inventory)",
+    )
 
 
 class ReportSummary(BaseModel):
