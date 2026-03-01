@@ -20,12 +20,11 @@ from fastapi.responses import FileResponse
 from src.auth import db
 from src.auth.routes import get_current_user, router as auth_router
 from src.inspection.aggregation import aggregate_findings, compute_iou
+from src.inspection.inference_client import process_frames
 from src.inspection.llm_reviewer import review_report
 from src.inspection.narrative_builder import build_narrative
 from src.inspection.report_builder import build_report
 from src.inspection.routes import router as inspection_router
-from src.inspection.vlm_client import classify_frames
-from src.inspection.yolo_detector import detect_batch, get_weights_name
 from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
 from src.memory.routes import router as memory_router
 from src.memory.supermemory_client import SupermemoryClient
@@ -45,6 +44,30 @@ app.include_router(preferences_router)
 logger = logging.getLogger(__name__)
 memory_client = SupermemoryClient()
 INSPECTIONS_DIR = Path('data') / 'inspections'
+
+
+def get_weights_name() -> str:
+    # Remote inference service owns YOLO weights; keep label configurable.
+    return os.getenv('YOLO_WEIGHTS_NAME', 'remote')
+
+
+def detect_batch(frame_images):
+    """
+    Backward-compatible shim for older /inspect pipeline tests.
+    We run full remote inference inside classify_frames().
+    """
+    return [[] for _ in frame_images], 0.0
+
+
+async def classify_frames(frame_images, per_frame_detections):
+    """
+    Backward-compatible shim for older /inspect pipeline tests.
+    Returns (vlm_results, elapsed_ms) and exposes detections on
+    classify_frames._last_per_frame_detections.
+    """
+    detected, vlm_results, elapsed_ms = await process_frames(frame_images)
+    classify_frames._last_per_frame_detections = detected
+    return vlm_results, elapsed_ms
 
 
 @app.get('/health')
@@ -206,8 +229,11 @@ async def inspect(
                 raise HTTPException(status_code=500, detail=f'failed to build fallback frame: {exc}')
 
         per_frame_detections, yolo_ms = detect_batch(frame_images)
-        frames_with_dets = sum(1 for dets in per_frame_detections if dets)
         vlm_results, vlm_ms = await classify_frames(frame_images, per_frame_detections)
+        inferred_detections = getattr(classify_frames, '_last_per_frame_detections', None)
+        if inferred_detections is not None:
+            per_frame_detections = inferred_detections
+        frames_with_dets = sum(1 for dets in per_frame_detections if dets)
 
         frame_timestamps: dict[int, float] | None = None
         if video_fps and fps_sample_rate > 0:

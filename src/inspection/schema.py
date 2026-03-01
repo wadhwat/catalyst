@@ -23,7 +23,7 @@ class MappedDefect(BaseModel):
     defect_type: str
     confirmed: bool = True
     severity: str = Field(
-        ..., description="Minor | Moderate | Critical"
+        ..., description="CRITICAL | MODERATE | NORMAL (protocol)"
     )
     description: str
     bbox: List[float]

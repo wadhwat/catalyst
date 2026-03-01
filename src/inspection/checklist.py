@@ -1,3 +1,7 @@
+"""
+Caterpillar Mini Hydraulic Excavator inspection checklist. VLM output must
+map to one of these labels; anything else gets normalized to "Overall machine".
+"""
 from __future__ import annotations
 
 CHECKLIST_ITEMS: list[str] = [
