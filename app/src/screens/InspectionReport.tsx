@@ -77,6 +77,12 @@ export function InspectionReportScreen({
               <Text style={styles.summaryNotes}>{report.summary.notes}</Text>
             ) : null}
           </View>
+          {report.narrative ? (
+            <View style={styles.narrativeCard}>
+              <Text style={styles.sectionTitle}>Narrative</Text>
+              <Text style={styles.narrativeText}>{report.narrative}</Text>
+            </View>
+          ) : null}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Flagged Parts</Text>
@@ -174,6 +180,17 @@ const styles = StyleSheet.create({
   summaryNotes: {
     color: '#D1D5DB',
     marginTop: 8,
+  },
+  narrativeCard: {
+    backgroundColor: '#2A2A2A',
+    borderRadius: 16,
+    padding: 16,
+    gap: 8,
+  },
+  narrativeText: {
+    color: '#E5E7EB',
+    fontSize: 14,
+    lineHeight: 20,
   },
   section: {
     backgroundColor: '#2A2A2A',

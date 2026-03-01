@@ -4,6 +4,8 @@ export type InspectResponse = {
   inspection_id: string;
   client_trace_id: string;
   evidence_urls: string[];
+  findings?: Array<Record<string, unknown>>;
+  narrative?: string | null;
   report: {
     summary: { status: string; notes?: string };
     items: Array<{ id: string; status: string; notes?: string; evidence?: string[] }>;

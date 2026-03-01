@@ -50,7 +50,8 @@ def _normalize_checklist_item(item: str) -> str:
 
 
 def _severity_rank(severity: str) -> int:
-    return {"Minor": 0, "Moderate": 1, "Critical": 2}.get(severity, 0)
+    key = (severity or "").strip().title()
+    return {"Minor": 0, "Moderate": 1, "Critical": 2}.get(key, 0)
 
 
 def aggregate_findings(

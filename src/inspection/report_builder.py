@@ -41,7 +41,8 @@ def build_report(findings: List[Finding], evidence_frames: List[str]) -> Report:
             continue
 
         item_statuses = [
-            _SEVERITY_TO_STATUS.get(f.severity, "MONITOR") for f in item_findings
+            _SEVERITY_TO_STATUS.get((f.severity or "").strip().title(), "MONITOR")
+            for f in item_findings
         ]
         status = worst_status(item_statuses)
         max_conf = max(f.confidence for f in item_findings)

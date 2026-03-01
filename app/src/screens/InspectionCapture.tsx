@@ -101,6 +101,7 @@ export function InspectionCaptureScreen({
           notes: item.notes,
           evidence_urls: item.evidence,
         })),
+        narrative: response.narrative ?? null,
       };
 
       navigation.replace('InspectionReport', {

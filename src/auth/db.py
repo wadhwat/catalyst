@@ -54,12 +54,14 @@ def init_db(db_path: Optional[Path] = None) -> None:
                 items_json TEXT NOT NULL,
                 evidence_urls_json TEXT,
                 report_json TEXT,
+                narrative_text TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
             """
         )
         _ensure_column(conn, 'inspection_reports', 'report_json', 'report_json TEXT')
+        _ensure_column(conn, 'inspection_reports', 'narrative_text', 'narrative_text TEXT')
         conn.commit()
 
 
@@ -243,6 +245,7 @@ def create_inspection_report(
     items_json: str,
     evidence_urls_json: Optional[str],
     report_json: Optional[str],
+    narrative_text: Optional[str],
     created_at: str,
     db_path: Optional[Path] = None,
 ) -> None:
@@ -251,8 +254,8 @@ def create_inspection_report(
         conn.execute(
             """
             INSERT OR REPLACE INTO inspection_reports (
-                id, user_id, vin, observed_at, summary_status, items_json, evidence_urls_json, report_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, user_id, vin, observed_at, summary_status, items_json, evidence_urls_json, report_json, narrative_text, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 report_id,
@@ -263,6 +266,7 @@ def create_inspection_report(
                 items_json,
                 evidence_urls_json,
                 report_json,
+                narrative_text,
                 created_at,
             ),
         )
