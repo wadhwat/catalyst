@@ -1,19 +1,21 @@
-import React, { useEffect, useRef, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Camera, CameraType } from 'expo-camera';
 import * as Crypto from 'expo-crypto';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../types/navigation';
-import { machines } from '../data/machines';
 import { uploadInspection } from '../api/inspect';
 import { InspectionReportContent } from '../types/report';
+import { useMachines } from '../machines/MachinesContext';
+import { Screen } from '../components/Screen';
 
 export function InspectionCaptureScreen({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, 'InspectionCapture'>) {
   const { machineId } = route.params;
+  const { machines } = useMachines();
   const machine = machines.find((item) => item.id === machineId);
   const [permission, requestPermission] = Camera.useCameraPermissions();
   const cameraRef = useRef<Camera | null>(null);
@@ -43,28 +45,28 @@ export function InspectionCaptureScreen({
 
   if (!machine) {
     return (
-      <View style={styles.container}>
+      <Screen style={styles.container}>
         <Text style={styles.errorText}>Machine not found.</Text>
-      </View>
+      </Screen>
     );
   }
 
   if (!permission) {
     return (
-      <View style={styles.container}>
+      <Screen style={styles.container}>
         <ActivityIndicator color="#F4D35E" />
-      </View>
+      </Screen>
     );
   }
 
   if (!permission.granted) {
     return (
-      <View style={styles.container}>
+      <Screen style={styles.container}>
         <Text style={styles.infoText}>Camera access is required to start an inspection.</Text>
         <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
           <Text style={styles.primaryButtonText}>Enable Camera</Text>
         </TouchableOpacity>
-      </View>
+      </Screen>
     );
   }
 
@@ -123,7 +125,7 @@ export function InspectionCaptureScreen({
   const timerLabel = `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, '0')}`;
 
   return (
-    <View style={styles.container}>
+    <Screen style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>Back</Text>
@@ -150,7 +152,7 @@ export function InspectionCaptureScreen({
           </View>
         </View>
       </View>
-    </View>
+    </Screen>
   );
 }
 
@@ -160,7 +162,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B1B1B',
   },
   topBar: {
-    paddingTop: 16,
     paddingHorizontal: 16,
     paddingBottom: 12,
     flexDirection: 'row',

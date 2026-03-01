@@ -2,6 +2,7 @@ import React, { useContext, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AuthContext } from '../auth/context';
 import { login } from '../api/auth';
+import { Screen } from '../components/Screen';
 
 export function LoginScreen() {
   const { signIn } = useContext(AuthContext);
@@ -26,7 +27,7 @@ export function LoginScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <Screen style={styles.container}>
       <View style={styles.header}>
         <View style={styles.logoBlock}>
           <Text style={styles.logoText}>CAT</Text>
@@ -69,7 +70,7 @@ export function LoginScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </Screen>
   );
 }
 
@@ -78,7 +79,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1B1B1B',
     paddingHorizontal: 20,
-    paddingTop: 60,
   },
   header: {
     alignItems: 'center',

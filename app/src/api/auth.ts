@@ -14,3 +14,14 @@ export async function login(email: string, password: string): Promise<LoginRespo
     false
   );
 }
+
+export type ProfileResponse = {
+  id: number;
+  email: string;
+  display_name?: string | null;
+  created_at?: string;
+};
+
+export async function getProfile(): Promise<ProfileResponse> {
+  return apiFetch<ProfileResponse>('/auth/me', { method: 'GET' });
+}
