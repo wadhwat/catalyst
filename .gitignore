@@ -37,3 +37,6 @@ catalyst_*/
 tmp/
 temp/
 
+# Local EC2 inference service sandbox (not part of app repo)
+ec2_inference/
+
