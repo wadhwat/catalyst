@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Camera, CameraType } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Crypto from 'expo-crypto';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
@@ -17,8 +17,8 @@ export function InspectionCaptureScreen({
   const { machineId } = route.params;
   const { machines } = useMachines();
   const machine = machines.find((item) => item.id === machineId);
-  const [permission, requestPermission] = Camera.useCameraPermissions();
-  const cameraRef = useRef<Camera | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const cameraRef = useRef<CameraView | null>(null);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -75,7 +75,7 @@ export function InspectionCaptureScreen({
     setRecording(true);
     try {
       const video = await cameraRef.current.recordAsync({
-        quality: Camera.Constants.VideoQuality['480p'],
+        maxDuration: 300,
       });
       if (!video?.uri) return;
       setUploading(true);
@@ -134,7 +134,7 @@ export function InspectionCaptureScreen({
       </View>
 
       <View style={styles.cameraWrapper}>
-        <Camera ref={cameraRef} style={styles.camera} type={CameraType.back} />
+        <CameraView ref={cameraRef} style={styles.camera} facing="back" mode="video" />
         <View style={styles.overlay}>
           <Text style={styles.timer}>{timerLabel}</Text>
           <View style={styles.controls}>

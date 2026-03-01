@@ -1,7 +1,7 @@
 ﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 
 import { RootStackParamList } from '../types/navigation';
@@ -54,11 +54,13 @@ export function MachineDetailScreen({
 
   const handleUploadRecorded = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({ type: 'video/*', copyToCacheDirectory: true });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+      });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       const fileUri = asset.uri;
-      const fileName = asset.name ?? `inspection-${Date.now()}.mp4`;
+      const fileName = asset.fileName ?? `inspection-${Date.now()}.mp4`;
       const mimeType = asset.mimeType ?? 'video/mp4';
 
       setUploading(true);
