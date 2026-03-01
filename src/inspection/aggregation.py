@@ -1,3 +1,7 @@
+"""
+Deduplicate findings across frames. Same rust spot in frames 3 and 4 shouldn't
+show up twice — we merge by checklist item, defect type, and bbox overlap.
+"""
 from __future__ import annotations
 
 import logging
@@ -9,12 +13,13 @@ from src.inspection.schema import Finding, VlmFrameResult
 
 logger = logging.getLogger(__name__)
 
+# Same defect in adjacent frames = merge. IoU below this = keep separate.
 _IOU_MERGE_THRESHOLD = 0.5
 _FRAME_ADJACENCY_WINDOW = 3
 
 
 def compute_iou(bbox_a: List[float], bbox_b: List[float]) -> float:
-    """Compute IoU between two [cx, cy, w, h] normalized bboxes."""
+    """Intersection over Union for [cx, cy, w, h] bboxes. 1.0 = identical, 0 = no overlap."""
     ax1 = bbox_a[0] - bbox_a[2] / 2
     ay1 = bbox_a[1] - bbox_a[3] / 2
     ax2 = bbox_a[0] + bbox_a[2] / 2
@@ -44,13 +49,19 @@ def compute_iou(bbox_a: List[float], bbox_b: List[float]) -> float:
 
 
 def _normalize_checklist_item(item: str) -> str:
+    # Qwen sometimes returns labels we don't recognize — fall back to catch-all
     if item in CHECKLIST_SET:
         return item
     return "Overall machine"
 
 
 def _severity_rank(severity: str) -> int:
-    return {"Minor": 0, "Moderate": 1, "Critical": 2}.get(severity, 0)
+    # Protocol uses CRITICAL/MODERATE/NORMAL; support legacy Minor/Moderate/Critical
+    return {
+        "NORMAL": 0, "Minor": 0,
+        "MODERATE": 1, "Moderate": 1,
+        "CRITICAL": 2, "Critical": 2,
+    }.get(severity, 0)
 
 
 def aggregate_findings(
@@ -58,10 +69,9 @@ def aggregate_findings(
     frame_timestamps: dict[int, float] | None = None,
 ) -> tuple[List[Finding], float]:
     """
-    Deduplicate and merge VLM findings across frames.
-
-    Merging criteria: same checklist_item + same defect_type + bbox IoU > threshold
-    across frames within the adjacency window.
+    Turn many per-frame findings into a single deduplicated list. Two findings
+    merge if they're the same checklist item + defect type, in nearby frames,
+    and their bboxes overlap enough. When merging, we keep the worse severity.
     """
     t0 = time.perf_counter()
     frame_timestamps = frame_timestamps or {}
