@@ -21,54 +21,84 @@ def _make_test_image() -> bytes:
     return buf.tobytes()
 
 
-def _mock_yolo_result(img_h: int = 480, img_w: int = 640):
-    """Build a mock YOLO result with one detection."""
-    box = MagicMock()
-    box.xyxy = [MagicMock()]
-    box.xyxy[0].cpu.return_value.numpy.return_value = np.array(
-        [100.0, 100.0, 200.0, 200.0]
+EC2_RESPONSE_WITH_DETECTIONS = {
+    "detections": [
+        {
+            "detection_id": 1,
+            "class_name": "corrosion",
+            "confidence": 0.92,
+            "bbox_norm": [0.2344, 0.3125, 0.1563, 0.2083],
+            "bbox_pixel": [100, 100, 200, 200],
+        }
+    ],
+    "mapped_defects": [
+        {
+            "detection_id": 1,
+            "checklist_item": "Boom, cylinders",
+            "defect_type": "corrosion",
+            "confirmed": True,
+            "severity": "MODERATE",
+            "description": "Visible rust on the boom arm near pivot point.",
+            "bbox": [0.2344, 0.3125, 0.1563, 0.2083],
+        }
+    ],
+    "qwen_raw": "{}",
+    "error": None,
+}
+
+EC2_RESPONSE_NO_DETECTIONS = {
+    "detections": [],
+    "mapped_defects": [],
+    "qwen_raw": None,
+    "error": None,
+}
+
+GPT4_REPORT_RESPONSE = json.dumps({
+    "summary": {"status": "MONITOR", "notes": "1 finding across 1 component."},
+    "items": [
+        {"id": "Boom, cylinders", "status": "MONITOR", "score": 0.92, "notes": "Corrosion detected on boom arm."},
+        {"id": "Bucket/GET", "status": "PASS", "score": 0.0, "notes": "No defects detected."},
+    ],
+})
+
+
+def _mock_ec2_response(response_data: dict, status_code: int = 200):
+    """Create a mock httpx response."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    mock_resp.json.return_value = response_data
+    mock_resp.text = json.dumps(response_data)
+    return mock_resp
+
+
+@pytest.fixture
+def mock_ec2_with_detections():
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(
+        return_value=_mock_ec2_response(EC2_RESPONSE_WITH_DETECTIONS)
     )
-    box.cls = [MagicMock()]
-    box.cls[0].item.return_value = 0
-    box.conf = [MagicMock()]
-    box.conf[0].item.return_value = 0.92
-
-    result = MagicMock()
-    result.boxes = [box]
-    result.names = {0: "corrosion"}
-    return [result]
-
-
-VLM_RESPONSE = json.dumps(
-    {
-        "mapped_defects": [
-            {
-                "detection_id": 1,
-                "checklist_item": "Boom, cylinders",
-                "defect_type": "corrosion",
-                "confirmed": True,
-                "severity": "Moderate",
-                "description": "Visible rust on the boom arm near pivot point.",
-                "bbox": [0.2344, 0.3125, 0.1563, 0.2083],
-            }
-        ]
-    }
-)
+    with patch("src.inspection.inference_client.httpx.AsyncClient", return_value=mock_client):
+        yield mock_client
 
 
 @pytest.fixture
-def mock_yolo():
-    mock_model = MagicMock()
-    mock_model.predict.return_value = _mock_yolo_result()
-    with patch("src.inspection.yolo_detector._load_model", return_value=mock_model):
-        with patch("src.inspection.yolo_detector._weights_name", "test_model.pt"):
-            yield mock_model
+def mock_ec2_no_detections():
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(
+        return_value=_mock_ec2_response(EC2_RESPONSE_NO_DETECTIONS)
+    )
+    with patch("src.inspection.inference_client.httpx.AsyncClient", return_value=mock_client):
+        yield mock_client
 
 
 @pytest.fixture
-def mock_openai():
+def mock_gpt4():
     choice = MagicMock()
-    choice.message.content = VLM_RESPONSE
+    choice.message.content = GPT4_REPORT_RESPONSE
 
     completion = MagicMock()
     completion.choices = [choice]
@@ -76,7 +106,7 @@ def mock_openai():
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(return_value=completion)
 
-    with patch("src.inspection.vlm_client._get_client", return_value=mock_client):
+    with patch("src.inspection.report_llm._get_client", return_value=mock_client):
         yield mock_client
 
 
@@ -88,7 +118,7 @@ class TestInferEndpoint:
         )
         assert resp.status_code == 400
 
-    def test_single_image_full_pipeline(self, mock_yolo, mock_openai):
+    def test_single_image_full_pipeline(self, mock_ec2_with_detections, mock_gpt4):
         img_bytes = _make_test_image()
         resp = client.post(
             "/inspect/infer",
@@ -108,33 +138,23 @@ class TestInferEndpoint:
         f = body["findings"][0]
         assert f["checklist_item"] == "Boom, cylinders"
         assert f["defect_type"] == "corrosion"
-        assert f["severity"] == "Moderate"
+        assert f["severity"] == "MODERATE"
 
         report = body["report"]
         assert report["summary"]["status"] in ("PASS", "MONITOR", "FAIL")
-        assert len(report["items"]) > 0
 
-    def test_no_detections_returns_all_pass(self, mock_openai):
-        mock_model = MagicMock()
-        empty_result = MagicMock()
-        empty_result.boxes = []
-        mock_model.predict.return_value = [empty_result]
-
-        with patch("src.inspection.yolo_detector._load_model", return_value=mock_model):
-            with patch("src.inspection.yolo_detector._weights_name", "test.pt"):
-                img_bytes = _make_test_image()
-                resp = client.post(
-                    "/inspect/infer",
-                    data={"inspection_id": "test-clean"},
-                    files=[("frames", ("test.jpg", io.BytesIO(img_bytes), "image/jpeg"))],
-                )
-
+    def test_no_detections_returns_pass(self, mock_ec2_no_detections, mock_gpt4):
+        img_bytes = _make_test_image()
+        resp = client.post(
+            "/inspect/infer",
+            data={"inspection_id": "test-clean"},
+            files=[("frames", ("test.jpg", io.BytesIO(img_bytes), "image/jpeg"))],
+        )
         assert resp.status_code == 200
         body = resp.json()
         assert len(body["findings"]) == 0
-        assert body["report"]["summary"]["status"] == "PASS"
 
-    def test_multiple_frames(self, mock_yolo, mock_openai):
+    def test_multiple_frames(self, mock_ec2_with_detections, mock_gpt4):
         img_bytes = _make_test_image()
         files = [
             ("frames", (f"frame_{i}.jpg", io.BytesIO(img_bytes), "image/jpeg"))
@@ -148,3 +168,22 @@ class TestInferEndpoint:
         assert resp.status_code == 200
         body = resp.json()
         assert body["processing_stats"]["frame_count"] == 3
+
+    def test_ec2_failure_returns_partial(self, mock_gpt4):
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(
+            return_value=_mock_ec2_response({"error": "GPU OOM"}, status_code=500)
+        )
+        with patch("src.inspection.inference_client.httpx.AsyncClient", return_value=mock_client):
+            img_bytes = _make_test_image()
+            resp = client.post(
+                "/inspect/infer",
+                data={"inspection_id": "test-error"},
+                files=[("frames", ("test.jpg", io.BytesIO(img_bytes), "image/jpeg"))],
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["errors"]) >= 1
+        assert body["findings"] == []

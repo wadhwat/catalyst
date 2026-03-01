@@ -1,3 +1,8 @@
+"""
+Build the final Report object from findings. Used when GPT-4 fails or as
+a fallback — deterministic, no API calls. Maps each checklist item to
+PASS / MONITOR / FAIL based on severity.
+"""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -8,15 +13,16 @@ from src.inspection.schema import Finding
 from src.report.schema import Report, ReportItem, ReportSummary
 from src.rubric.rules import worst_status
 
+# Protocol: CRITICAL=FAIL, MODERATE=MONITOR, NORMAL=PASS. Legacy names supported.
 _SEVERITY_TO_STATUS = {
-    "Minor": "MONITOR",
-    "Moderate": "MONITOR",
-    "Critical": "FAIL",
+    "CRITICAL": "FAIL", "Critical": "FAIL",
+    "MODERATE": "MONITOR", "Moderate": "MONITOR", "Minor": "MONITOR",
+    "NORMAL": "PASS",
 }
 
 
 def build_report(findings: List[Finding], evidence_frames: List[str]) -> Report:
-    """Convert aggregated findings into the existing Report schema."""
+    """Convert findings into the app's Report schema — same shape the frontend expects."""
     findings_by_item: dict[str, List[Finding]] = defaultdict(list)
     for f in findings:
         findings_by_item[f.checklist_item].append(f)
