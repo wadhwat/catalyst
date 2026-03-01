@@ -4,6 +4,8 @@ export type RootStackParamList = {
   Login: undefined;
   Home: undefined;
   MachineDetail: { machineId: string };
+  MachinePreferences: { machineId: string };
+  ProfilePreferences: undefined;
   InspectionCapture: { machineId: string };
   InspectionReport: {
     machineId: string;

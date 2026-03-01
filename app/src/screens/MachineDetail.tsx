@@ -6,7 +6,7 @@ import * as Crypto from 'expo-crypto';
 
 import { RootStackParamList } from '../types/navigation';
 import { uploadInspection } from '../api/inspect';
-import { searchMemories } from '../api/memories';
+import { getReportsForVin } from '../api/reports';
 import { InspectionReportContent } from '../types/report';
 import { formatShortDate } from '../utils/time';
 import { useMachines } from '../machines/MachinesContext';
@@ -30,33 +30,11 @@ export function MachineDetailScreen({
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const response = await searchMemories({
-        tags: [`vin:${machine.vin}`, 'kind:inspection_report'],
-        limit: 20,
-      });
-      const results = response?.results ?? [];
-      const parsed = results
-        .map((result) => {
-          const content = (result as any).content as InspectionReportContent | undefined;
-          if (!content || !content.client_trace_id) return null;
-          return content;
-        })
-        .filter(Boolean) as InspectionReportContent[];
-
-      parsed.sort((a, b) => {
-        const aTime = a.observed_at ? new Date(a.observed_at).getTime() : 0;
-        const bTime = b.observed_at ? new Date(b.observed_at).getTime() : 0;
-        return bTime - aTime;
-      });
-      setHistory(parsed);
+      const parsed = await getReportsForVin(machine.vin);
+      setHistory(parsed ?? []);
     } catch (error) {
-      const message = String(error);
-      if (message.includes('Supermemory is not configured')) {
-        setHistoryError('History unavailable (Supermemory is not configured).');
-      } else {
-        setHistoryError('History unavailable. Please try again.');
-        Alert.alert('History unavailable', message);
-      }
+      setHistoryError('History unavailable. Please try again.');
+      Alert.alert('History unavailable', String(error));
     } finally {
       setHistoryLoading(false);
     }
@@ -150,6 +128,13 @@ export function MachineDetailScreen({
           ) : (
             <Text style={styles.secondaryButtonText}>Upload Recorded Video</Text>
           )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tertiaryButton}
+          onPress={() => navigation.navigate('MachinePreferences', { machineId: machine.id })}
+        >
+          <Text style={styles.tertiaryButtonText}>Machine Preferences</Text>
         </TouchableOpacity>
 
         <View style={styles.section}>
@@ -280,6 +265,20 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     color: '#F4D35E',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  tertiaryButton: {
+    height: 44,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#3A3A3A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1F1F1F',
+  },
+  tertiaryButtonText: {
+    color: '#E5E7EB',
+    fontSize: 13,
     fontWeight: '600',
   },
   section: {
