@@ -12,6 +12,8 @@ import { getToken, setToken as persistToken, clearToken } from './src/auth/token
 import { LoginScreen } from './src/screens/Login';
 import { HomeScreen } from './src/screens/Home';
 import { MachineDetailScreen } from './src/screens/MachineDetail';
+import { MachinePreferencesScreen } from './src/screens/MachinePreferences';
+import { ProfilePreferencesScreen } from './src/screens/ProfilePreferences';
 import { InspectionCaptureScreen } from './src/screens/InspectionCapture';
 import { InspectionReportScreen } from './src/screens/InspectionReport';
 import { RootStackParamList } from './src/types/navigation';
@@ -104,6 +106,8 @@ export default function App() {
               <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Home" component={HomeScreen} />
                 <Stack.Screen name="MachineDetail" component={MachineDetailScreen} />
+                <Stack.Screen name="MachinePreferences" component={MachinePreferencesScreen} />
+                <Stack.Screen name="ProfilePreferences" component={ProfilePreferencesScreen} />
                 <Stack.Screen name="InspectionCapture" component={InspectionCaptureScreen} />
                 <Stack.Screen name="InspectionReport" component={InspectionReportScreen} />
               </Stack.Navigator>

@@ -4,7 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../types/navigation';
 import { InspectionReportContent } from '../types/report';
-import { searchMemories } from '../api/memories';
+import { getReportById } from '../api/reports';
 import { resolveMediaUrl } from '../api/client';
 import { useMachines } from '../machines/MachinesContext';
 import { Screen } from '../components/Screen';
@@ -31,17 +31,12 @@ export function InspectionReportScreen({
       if (report || !inspectionId) return;
       setLoading(true);
       try {
-        const response = await searchMemories({
-          tags: [`inspection:${inspectionId}`],
-          limit: 1,
-        });
-        const item = response?.results?.[0] as any;
-        const content = item?.content as InspectionReportContent | undefined;
+        const content = await getReportById(inspectionId);
         if (content) {
           setReport(content);
-        } else {
-          Alert.alert('Report unavailable', 'No inspection report found.');
+          return;
         }
+        Alert.alert('Report unavailable', 'No inspection report found.');
       } catch (error) {
         Alert.alert('Report unavailable', String(error));
       } finally {

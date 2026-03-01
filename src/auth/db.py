@@ -28,7 +28,46 @@ def init_db(db_path: Optional[Path] = None) -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS machines (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                vin TEXT NOT NULL,
+                machine_type TEXT NOT NULL,
+                niche TEXT NOT NULL,
+                image_url TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS inspection_reports (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                vin TEXT NOT NULL,
+                observed_at TEXT NOT NULL,
+                summary_status TEXT NOT NULL,
+                items_json TEXT NOT NULL,
+                evidence_urls_json TEXT,
+                report_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+            """
+        )
+        _ensure_column(conn, 'inspection_reports', 'report_json', 'report_json TEXT')
         conn.commit()
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    cur = conn.execute(f'PRAGMA table_info({table})')
+    columns = [row[1] for row in cur.fetchall()]
+    if column not in columns:
+        conn.execute(f'ALTER TABLE {table} ADD COLUMN {ddl}')
 
 
 def get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -83,5 +122,148 @@ def update_display_name(
         conn.execute(
             "UPDATE users SET display_name = ? WHERE id = ?",
             (display_name, user_id),
+        )
+        conn.commit()
+
+
+def create_machine(
+    user_id: int,
+    machine_id: str,
+    name: str,
+    vin: str,
+    machine_type: str,
+    niche: str,
+    image_url: Optional[str],
+    created_at: str,
+    db_path: Optional[Path] = None,
+) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO machines (id, user_id, name, vin, machine_type, niche, image_url, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (machine_id, user_id, name, vin, machine_type, niche, image_url, created_at),
+        )
+        conn.commit()
+
+
+def list_machines(user_id: int, db_path: Optional[Path] = None) -> list[sqlite3.Row]:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            "SELECT * FROM machines WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        )
+        return cur.fetchall()
+
+
+def get_machine_by_id(
+    user_id: int,
+    machine_id: str,
+    db_path: Optional[Path] = None,
+) -> Optional[sqlite3.Row]:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            "SELECT * FROM machines WHERE user_id = ? AND id = ?",
+            (user_id, machine_id),
+        )
+        return cur.fetchone()
+
+
+def get_latest_report_for_vin(
+    user_id: int,
+    vin: str,
+    db_path: Optional[Path] = None,
+) -> Optional[sqlite3.Row]:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            """
+            SELECT * FROM inspection_reports
+            WHERE user_id = ? AND vin = ?
+            ORDER BY observed_at DESC
+            LIMIT 1
+            """,
+            (user_id, vin),
+        )
+        return cur.fetchone()
+
+
+def list_reports(
+    user_id: int,
+    vin: Optional[str] = None,
+    db_path: Optional[Path] = None,
+) -> list[sqlite3.Row]:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        if vin:
+            cur = conn.execute(
+                """
+                SELECT * FROM inspection_reports
+                WHERE user_id = ? AND vin = ?
+                ORDER BY observed_at DESC
+                """,
+                (user_id, vin),
+            )
+        else:
+            cur = conn.execute(
+                """
+                SELECT * FROM inspection_reports
+                WHERE user_id = ?
+                ORDER BY observed_at DESC
+                """,
+                (user_id,),
+            )
+        return cur.fetchall()
+
+
+def get_report_by_id(
+    user_id: int,
+    report_id: str,
+    db_path: Optional[Path] = None,
+) -> Optional[sqlite3.Row]:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        cur = conn.execute(
+            "SELECT * FROM inspection_reports WHERE user_id = ? AND id = ?",
+            (user_id, report_id),
+        )
+        return cur.fetchone()
+
+
+def create_inspection_report(
+    user_id: int,
+    report_id: str,
+    vin: str,
+    observed_at: str,
+    summary_status: str,
+    items_json: str,
+    evidence_urls_json: Optional[str],
+    report_json: Optional[str],
+    created_at: str,
+    db_path: Optional[Path] = None,
+) -> None:
+    init_db(db_path)
+    with get_connection(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO inspection_reports (
+                id, user_id, vin, observed_at, summary_status, items_json, evidence_urls_json, report_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report_id,
+                user_id,
+                vin,
+                observed_at,
+                summary_status,
+                items_json,
+                evidence_urls_json,
+                report_json,
+                created_at,
+            ),
         )
         conn.commit()
