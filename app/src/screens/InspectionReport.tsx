@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { RootStackParamList } from '../types/navigation';
 import { InspectionReportContent } from '../types/report';
-import { machines } from '../data/machines';
 import { searchMemories } from '../api/memories';
 import { resolveMediaUrl } from '../api/client';
+import { useMachines } from '../machines/MachinesContext';
+import { Screen } from '../components/Screen';
 
 function formatItemLabel(id: string): string {
   return id
@@ -19,6 +20,7 @@ export function InspectionReportScreen({
   navigation,
 }: NativeStackScreenProps<RootStackParamList, 'InspectionReport'>) {
   const { machineId, inspectionId, report: initialReport } = route.params;
+  const { machines } = useMachines();
   const machine = machines.find((item) => item.id === machineId);
   const [report, setReport] = useState<InspectionReportContent | undefined>(initialReport);
   const [loading, setLoading] = useState(!initialReport);
@@ -55,7 +57,7 @@ export function InspectionReportScreen({
   }, [report]);
 
   return (
-    <View style={styles.container}>
+    <Screen style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backText}>Back</Text>
@@ -122,7 +124,7 @@ export function InspectionReportScreen({
           </View>
         </ScrollView>
       )}
-    </View>
+    </Screen>
   );
 }
 
@@ -132,7 +134,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B1B1B',
   },
   topBar: {
-    paddingTop: 16,
     paddingHorizontal: 16,
     paddingBottom: 12,
     flexDirection: 'row',

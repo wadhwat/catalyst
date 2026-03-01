@@ -1,30 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+﻿import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Crypto from 'expo-crypto';
 
 import { RootStackParamList } from '../types/navigation';
-import { machines } from '../data/machines';
 import { uploadInspection } from '../api/inspect';
 import { searchMemories } from '../api/memories';
 import { InspectionReportContent } from '../types/report';
 import { formatShortDate } from '../utils/time';
+import { useMachines } from '../machines/MachinesContext';
+import { Screen } from '../components/Screen';
 
 export function MachineDetailScreen({
   navigation,
   route,
 }: NativeStackScreenProps<RootStackParamList, 'MachineDetail'>) {
   const { machineId } = route.params;
-  const machine = useMemo(() => machines.find((item) => item.id === machineId), [machineId]);
+  const { machines } = useMachines();
+  const machine = useMemo(() => machines.find((item) => item.id === machineId), [machineId, machines]);
   const [uploading, setUploading] = useState(false);
   const [history, setHistory] = useState<InspectionReportContent[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [resolvedIssues, setResolvedIssues] = useState<Record<string, boolean>>({});
 
   const loadHistory = useCallback(async () => {
     if (!machine) return;
     setHistoryLoading(true);
+    setHistoryError(null);
     try {
       const response = await searchMemories({
         tags: [`vin:${machine.vin}`, 'kind:inspection_report'],
@@ -46,7 +50,13 @@ export function MachineDetailScreen({
       });
       setHistory(parsed);
     } catch (error) {
-      Alert.alert('History unavailable', String(error));
+      const message = String(error);
+      if (message.includes('Supermemory is not configured')) {
+        setHistoryError('History unavailable (Supermemory is not configured).');
+      } else {
+        setHistoryError('History unavailable. Please try again.');
+        Alert.alert('History unavailable', message);
+      }
     } finally {
       setHistoryLoading(false);
     }
@@ -58,9 +68,9 @@ export function MachineDetailScreen({
 
   if (!machine) {
     return (
-      <View style={styles.container}>
+      <Screen style={styles.container}>
         <Text style={styles.errorText}>Machine not found.</Text>
-      </View>
+      </Screen>
     );
   }
 
@@ -113,7 +123,7 @@ export function MachineDetailScreen({
   const issueLabels = machine.criticalIssueLabels ?? [];
 
   return (
-    <View style={styles.container}>
+    <Screen style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Text style={styles.backText}>Back</Text>
@@ -185,6 +195,7 @@ export function MachineDetailScreen({
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Inspection History</Text>
+          {historyError && <Text style={styles.historyError}>{historyError}</Text>}
           {historyLoading ? (
             <ActivityIndicator color="#F4D35E" />
           ) : history.length === 0 ? (
@@ -206,13 +217,13 @@ export function MachineDetailScreen({
                   <Text style={styles.historyDate}>{formatShortDate(item.observed_at)}</Text>
                   <Text style={styles.historyStatus}>{item.summary.status}</Text>
                 </View>
-                <Text style={styles.historyChevron}>�</Text>
+                <Text style={styles.historyChevron}>›</Text>
               </TouchableOpacity>
             ))
           )}
         </View>
       </ScrollView>
-    </View>
+    </Screen>
   );
 }
 
@@ -222,7 +233,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#1B1B1B',
   },
   topBar: {
-    paddingTop: 16,
     paddingHorizontal: 16,
     paddingBottom: 8,
     flexDirection: 'row',
@@ -349,6 +359,10 @@ const styles = StyleSheet.create({
   historyChevron: {
     color: '#9CA3AF',
     fontSize: 22,
+  },
+  historyError: {
+    color: '#FBBF24',
+    fontSize: 12,
   },
   errorText: {
     color: '#F87171',
