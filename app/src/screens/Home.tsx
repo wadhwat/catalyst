@@ -1,8 +1,6 @@
 import React, { useContext, useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import * as Crypto from 'expo-crypto';
-
-import { DEFAULT_MACHINE_IMAGE, Machine } from '../data/machines';
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { DEFAULT_MACHINE_IMAGE } from '../data/machines';
 import { MachineCard } from '../components/MachineCard';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
@@ -100,21 +98,21 @@ export function HomeScreen({ navigation }: NativeStackScreenProps<RootStackParam
                 style={styles.modalPrimary}
                 onPress={() => {
                   if (!form.name.trim() || !form.vin.trim()) return;
-                  const machine: Machine = {
-                    id: Crypto.randomUUID(),
+                  const input = {
                     name: form.name.trim(),
                     vin: form.vin.trim(),
-                    lastInspectedMs: null,
-                    status: 'UNKNOWN',
-                    criticalIssues: 0,
-                    imageUrl: form.imageUrl.trim() || DEFAULT_MACHINE_IMAGE,
                     machineType: form.machineType.trim() || 'unknown',
                     niche: form.niche.trim() || 'general',
-                    componentIssues: [],
+                    imageUrl: form.imageUrl.trim() || DEFAULT_MACHINE_IMAGE,
                   };
-                  addMachine(machine);
-                  setForm({ name: '', vin: '', machineType: '', niche: '', imageUrl: '' });
-                  setAddOpen(false);
+                  addMachine(input).then((created) => {
+                    if (created) {
+                      setForm({ name: '', vin: '', machineType: '', niche: '', imageUrl: '' });
+                      setAddOpen(false);
+                    } else {
+                      Alert.alert('Unable to add machine', 'Please try again.');
+                    }
+                  });
                 }}
               >
                 <Text style={styles.modalPrimaryText}>Add</Text>
@@ -128,6 +126,15 @@ export function HomeScreen({ navigation }: NativeStackScreenProps<RootStackParam
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setProfileOpen(false)}>
           <View style={styles.menuCard}>
             <Text style={styles.menuTitle}>{user?.display_name || user?.email}</Text>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setProfileOpen(false);
+                navigation.navigate('ProfilePreferences');
+              }}
+            >
+              <Text style={styles.menuItemText}>Preferences</Text>
+            </TouchableOpacity>
             <Text style={styles.menuItemMuted}>Manage memories (coming soon)</Text>
             <TouchableOpacity
               style={styles.menuLogout}
@@ -321,6 +328,17 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  menuItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#2A2A2A',
+    borderRadius: 12,
+  },
+  menuItemText: {
+    color: '#E5E7EB',
+    fontWeight: '600',
+    textAlign: 'center',
   },
   menuItemMuted: {
     color: '#9CA3AF',

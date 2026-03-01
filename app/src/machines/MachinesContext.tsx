@@ -1,14 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import { Machine } from '../data/machines';
-
-const STORAGE_PREFIX = 'machines:';
+import { createMachine as createMachineApi, getMachines, MachineCreateInput } from '../api/machines';
 
 type MachinesContextValue = {
   machines: Machine[];
   loading: boolean;
-  addMachine: (machine: Machine) => void;
+  addMachine: (machine: MachineCreateInput) => Promise<Machine | null>;
   updateMachine: (id: string, updates: Partial<Machine>) => void;
   setMachines: React.Dispatch<React.SetStateAction<Machine[]>>;
 };
@@ -23,23 +20,13 @@ type Props = {
 export function MachinesProvider({ userId, children }: Props) {
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hydrated, setHydrated] = useState(false);
-
-  const storageKey = `${STORAGE_PREFIX}${userId}`;
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       try {
-        const raw = await AsyncStorage.getItem(storageKey);
-        if (!raw) {
-          if (!cancelled) {
-            setMachines([]);
-          }
-          return;
-        }
-        const parsed = JSON.parse(raw) as Machine[];
+        const parsed = await getMachines();
         if (!cancelled) {
           setMachines(Array.isArray(parsed) ? parsed : []);
         }
@@ -50,7 +37,6 @@ export function MachinesProvider({ userId, children }: Props) {
       } finally {
         if (!cancelled) {
           setLoading(false);
-          setHydrated(true);
         }
       }
     };
@@ -58,15 +44,16 @@ export function MachinesProvider({ userId, children }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [storageKey]);
+  }, [userId]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    AsyncStorage.setItem(storageKey, JSON.stringify(machines)).catch(() => {});
-  }, [machines, storageKey, hydrated]);
-
-  const addMachine = useCallback((machine: Machine) => {
-    setMachines((prev) => [machine, ...prev]);
+  const addMachine = useCallback(async (machine: MachineCreateInput) => {
+    try {
+      const created = await createMachineApi(machine);
+      setMachines((prev) => [created, ...prev]);
+      return created;
+    } catch {
+      return null;
+    }
   }, []);
 
   const updateMachine = useCallback((id: string, updates: Partial<Machine>) => {
