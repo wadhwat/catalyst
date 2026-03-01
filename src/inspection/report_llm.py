@@ -1,6 +1,7 @@
 """
 Ask GPT-4 (text-only) to turn our findings list into a structured report JSON.
 Cheaper than vision calls — we already have the defect mappings from Qwen.
+When parts inventory is provided, GPT recommends 1–3 relevant parts per defect.
 """
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ import json
 import logging
 import os
 import time
-from typing import List
+from typing import Any, List
 
 from openai import AsyncOpenAI
 
@@ -30,6 +31,22 @@ def _get_client() -> AsyncOpenAI:
 
 def _get_model() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4o")
+
+
+def _parts_to_prompt(parts: List[dict[str, Any]]) -> str:
+    """Format parts inventory for GPT prompt."""
+    if not parts:
+        return ""
+    lines = ["INVENTORY DATABASE (scraped parts):"]
+    for p in parts:
+        pn = p.get("part_number", p.get("partNumber", ""))
+        name = p.get("name", p.get("description", ""))
+        desc = p.get("description", "") if "description" in p and p["description"] != name else ""
+        line = f"  - {pn}: {name}"
+        if desc:
+            line += f" — {desc}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 REPORT_SYSTEM_PROMPT = (
@@ -83,6 +100,11 @@ REPORT_RESPONSE_SCHEMA = {
                             },
                             "score": {"type": "number"},
                             "notes": {"type": "string"},
+                            "recommended_parts": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Part numbers from inventory that may help fix this defect",
+                            },
                         },
                         "required": ["id", "status", "score", "notes"],
                         "additionalProperties": False,
@@ -112,18 +134,35 @@ def _findings_to_text(findings: List[Finding]) -> str:
 async def generate_report_via_llm(
     findings: List[Finding],
     evidence_frames: List[str],
+    parts: List[dict[str, Any]] | None = None,
 ) -> tuple[Report, float]:
     """
     Feed findings to GPT-4 and get back a clean Report. Uses structured output
     so we get valid JSON every time. Routes fall back to report_builder if this fails.
+    If parts inventory is provided, GPT recommends 1–3 part numbers per defect item.
     """
     findings_text = _findings_to_text(findings)
+    parts_block = _parts_to_prompt(parts or [])
+
+    system_content = REPORT_SYSTEM_PROMPT
+    if parts_block:
+        system_content += (
+            "\n\nPART RECOMMENDATIONS:\n"
+            "For each checklist item with a defect (status MONITOR or FAIL), recommend 1–3 "
+            "part numbers from the inventory database that might help fix the defect. "
+            "Use fuzzy matching (e.g. 'rusted arm' → Boom Cylinder Pin). "
+            "Include the exact part_number in recommended_parts. No findings = empty array.\n\n"
+            f"{parts_block}"
+        )
+
     user_message = (
         f"Here are the inspection findings:\n\n{findings_text}\n\n"
         f"Generate the full inspection report JSON covering all "
         f"{len(CHECKLIST_ITEMS)} checklist items. Apply the protocol: "
         f"CRITICAL → LOTO and repair priority in summary; all NORMAL → Ready to Operate."
     )
+    if parts_block:
+        user_message += " For items with defects, recommend 1–3 relevant parts from the inventory and include their part numbers in recommended_parts."
 
     t0 = time.perf_counter()
     try:
@@ -131,7 +170,7 @@ async def generate_report_via_llm(
         response = await client.chat.completions.create(
             model=_get_model(),
             messages=[
-                {"role": "system", "content": REPORT_SYSTEM_PROMPT},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": user_message},
             ],
             response_format=REPORT_RESPONSE_SCHEMA,
@@ -154,6 +193,7 @@ async def generate_report_via_llm(
                 score=item["score"],
                 notes=item["notes"],
                 evidence=evidence_frames,
+                recommended_parts=item.get("recommended_parts") or [],
             )
             for item in parsed["items"]
         ]

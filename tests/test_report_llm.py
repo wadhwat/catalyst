@@ -150,3 +150,28 @@ class TestGenerateReportViaLlm:
 
         for item in report.items:
             assert item.evidence == frames
+
+    @pytest.mark.asyncio
+    async def test_recommended_parts_when_provided_by_gpt(self):
+        report_with_parts = {
+            "summary": {"status": "MONITOR", "notes": "1 finding."},
+            "items": [
+                {
+                    "id": "Boom, cylinders",
+                    "status": "MONITOR",
+                    "score": 0.85,
+                    "notes": "Corrosion detected.",
+                    "recommended_parts": ["492-110", "3K-7380"],
+                },
+                {"id": "Bucket/GET", "status": "PASS", "score": 0.0, "notes": "No defects."},
+            ],
+        }
+        mock_client = _mock_gpt4_client(report_with_parts)
+        with patch("src.inspection.report_llm._get_client", return_value=mock_client):
+            report, _ = await generate_report_via_llm(
+                [_make_finding()], ["frame_001.jpg"], parts=[{"part_number": "492-110", "name": "Boom Pin"}]
+            )
+        boom = next(i for i in report.items if i.id == "Boom, cylinders")
+        assert boom.recommended_parts == ["492-110", "3K-7380"]
+        bucket = next(i for i in report.items if i.id == "Bucket/GET")
+        assert bucket.recommended_parts == []

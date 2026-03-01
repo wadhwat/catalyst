@@ -41,6 +41,7 @@ def build_report(findings: List[Finding], evidence_frames: List[str]) -> Report:
                     score=0.0,
                     notes="No defects detected.",
                     evidence=evidence_frames,
+                    recommended_parts=[],
                 )
             )
             statuses.append("PASS")
@@ -63,6 +64,7 @@ def build_report(findings: List[Finding], evidence_frames: List[str]) -> Report:
                 score=max_conf,
                 notes=notes,
                 evidence=evidence_frames,
+                recommended_parts=[],
             )
         )
         statuses.append(status)

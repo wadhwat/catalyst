@@ -3,12 +3,19 @@ import { apiFetch } from './client';
 export type InspectResponse = {
   inspection_id: string;
   client_trace_id: string;
+  report_pdf_url?: string | null;
   evidence_urls: string[];
   findings?: Array<Record<string, unknown>>;
   narrative?: string | null;
   report: {
     summary: { status: string; notes?: string };
-    items: Array<{ id: string; status: string; notes?: string; evidence?: string[] }>;
+    items: Array<{
+      id: string;
+      status: string;
+      notes?: string;
+      evidence?: string[];
+      recommended_parts?: string[];
+    }>;
   };
 };
 

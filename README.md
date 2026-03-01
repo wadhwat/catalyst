@@ -9,10 +9,27 @@ pip install -r requirements.txt
 python -m src.api.server
 ```
 
-Notes:
-- The backend will live under `src/` and expose a FastAPI server.
-- The Expo app will live under `app/`.
-- Copy `.env.example` to `.env` for secrets.
-- The `POST /inspect/infer` endpoint calls an external GPU inference service (YOLO + Qwen). Set `INFERENCE_SERVICE_URL` to your deployed service (e.g. `http://your-gpu-ip:9000`).
-- CI uses `pytest` and includes a Supermemory integration test. To enable it in GitHub Actions,
-  set repository secrets `SUPERMEMORY_API_KEY` (required) and `SUPERMEMORY_BASE_URL` (optional).
+The backend binds to `0.0.0.0:8000` so it's reachable from your LAN (e.g. `http://YOUR_LAN_IP:8000`).
+
+## Expo app on your phone
+
+```bash
+cd app
+cp .env.example .env
+# Edit .env: set EXPO_PUBLIC_API_BASE_URL to your backend URL (e.g. http://192.168.1.100:8000)
+# localhost does not work on a physical phone — use your machine's LAN IP
+npm install
+npx expo start
+```
+
+Scan the QR code with Expo Go. Ensure your phone and backend are on the same network.
+
+## Configuration
+
+- **Backend** (`.env` at repo root): Copy `.env.example` to `.env`. Set `INFERENCE_SERVICE_URL` to your EC2 GPU endpoint (e.g. `http://your-gpu-ip:9000`).
+- **Expo** (`app/.env`): Set `EXPO_PUBLIC_API_BASE_URL` to your backend URL. Use LAN IP for phone testing.
+- **CI**: Set `SUPERMEMORY_API_KEY` and `SUPERMEMORY_BASE_URL` as GitHub secrets.
+
+## AI Use in Development
+
+This project was built with assistance from AI tools (including Cursor, Codex, and Claude Code) for code generation, refactoring, and debugging. AI was used to accelerate implementation of features such as the inspection pipeline, PDF report generation, voice commands, and integration with external APIs.

@@ -8,6 +8,7 @@ export type ReportItem = {
   status: string;
   notes?: string | null;
   evidence_urls?: string[];
+  recommended_parts?: string[];
 };
 
 export type InspectionReportContent = {

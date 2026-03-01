@@ -3,6 +3,7 @@ POST /inspect/infer — the main inspection pipeline.
 
 Accepts video or image frames, sends them to the EC2 GPU service (YOLO + Qwen),
 aggregates results, then asks GPT-4 for a clean report. Auth is optional.
+Optionally stores the report in Supermemory when configured.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import os
 import shutil
 import tempfile
 import time
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -18,6 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from src.auth.routes import get_current_user
 from src.inspection.aggregation import aggregate_findings
 from src.inspection.inference_client import process_frames
+from src.inspection.parts import load_parts
 from src.inspection.report_builder import build_report
 from src.inspection.report_llm import generate_report_via_llm
 from src.inspection.schema import (
@@ -26,12 +29,13 @@ from src.inspection.schema import (
     ModelVersions,
     ProcessingStats,
 )
+from src.memory.supermemory_client import SupermemoryClient
 from src.utils.images import load_image, resize_max
 from src.utils.video import sample_video_frames
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter(prefix="/inspect", tags=["inspection"])
+memory_client = SupermemoryClient()
 
 
 def _is_video(filename: str, content_type: str | None) -> bool:
@@ -41,11 +45,16 @@ def _is_video(filename: str, content_type: str | None) -> bool:
     return ext in {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
 
+def _memory_enabled() -> bool:
+    return bool(memory_client.api_key and memory_client.base_url)
+
+
 @router.post("/infer")
 async def infer(
     video: Optional[UploadFile] = File(None),
     frames: List[UploadFile] = File(default=[]),
     inspection_id: str = Form(...),
+    vin: Optional[str] = Form(None),
     machine_model: Optional[str] = Form(None),
     checklist_version: Optional[str] = Form(None),
     fps_sample_rate: int = Form(2),
@@ -145,8 +154,9 @@ async def infer(
 
         # --- 4. GPT-4 turns findings into structured report; fallback if it fails ---
         report_ms = 0.0
+        parts = load_parts()
         try:
-            report, report_ms = await generate_report_via_llm(findings, frame_names)
+            report, report_ms = await generate_report_via_llm(findings, frame_names, parts=parts)
         except Exception as exc:
             logger.warning("GPT-4 report failed, falling back to local builder: %s", exc)
             errors.append(FrameError(frame_index=-1, stage="report_llm", message=str(exc)))
@@ -157,6 +167,43 @@ async def infer(
             "Inspection %s complete: %d findings, %.0f ms total",
             inspection_id, len(findings), total_ms,
         )
+
+        if _memory_enabled():
+            tags = [f"inspection:{inspection_id}", "kind:inspection_report"]
+            if vin:
+                tags.append(f"vin:{vin}")
+            if user:
+                tags.append(f"user:{user.id}")
+            if machine_model:
+                tags.append(f"machine:{machine_model}")
+            observed_at = datetime.now(timezone.utc).isoformat()
+            content = {
+                "inspection_id": inspection_id,
+                "vin": vin,
+                "machine_model": machine_model,
+                "observed_at": observed_at,
+                "findings": [f.model_dump() for f in findings],
+                "report": report.model_dump(),
+                "processing_stats": {
+                    "frame_count": len(frame_images),
+                    "frames_with_detections": frames_with_dets,
+                    "yolo_ms": round(inference_ms, 1),
+                    "vlm_ms": round(report_ms, 1),
+                    "aggregation_ms": round(agg_ms, 1),
+                    "total_ms": round(total_ms, 1),
+                },
+                "errors": [e.model_dump() for e in errors],
+            }
+            created = memory_client.create_memory(
+                kind="inspection_report",
+                content=content,
+                tags=tags,
+                metadata={"vin": vin, "inspection_id": inspection_id, "observed_at": observed_at},
+            )
+            if created:
+                logger.info("Stored inspection %s in Supermemory", inspection_id)
+            else:
+                logger.warning("Failed to store inspection %s in Supermemory", inspection_id)
 
         return InferenceResponse(
             inspection_id=inspection_id,
