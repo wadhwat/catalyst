@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from src.auth.routes import get_current_user, router as auth_router
+from src.inspection.routes import router as inspection_router
 from src.memory.schema import EngineerNote, ItemSummary, MemoryReference, SessionSummary
 from src.memory.routes import router as memory_router
 from src.memory.supermemory_client import SupermemoryClient
@@ -23,6 +24,7 @@ from src.utils.video import sample_video_frames
 
 app = FastAPI(title='CATalyst Inspect API')
 app.include_router(auth_router)
+app.include_router(inspection_router)
 app.include_router(memory_router)
 logger = logging.getLogger(__name__)
 memory_client = SupermemoryClient()
