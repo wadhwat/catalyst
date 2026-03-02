@@ -9,18 +9,6 @@ import { uploadInspection } from '../api/inspect';
 import { InspectionReportContent } from '../types/report';
 import { useMachines } from '../machines/MachinesContext';
 import { Screen } from '../components/Screen';
-import { matchVoiceCommand } from '../utils/voiceCommands';
-import { speak } from '../utils/tts';
-
-let ExpoSpeechRecognitionModule: typeof import('expo-speech-recognition').ExpoSpeechRecognitionModule | null = null;
-let useSpeechRecognitionEvent: typeof import('expo-speech-recognition').useSpeechRecognitionEvent | null = null;
-try {
-  const mod = require('expo-speech-recognition');
-  ExpoSpeechRecognitionModule = mod.ExpoSpeechRecognitionModule;
-  useSpeechRecognitionEvent = mod.useSpeechRecognitionEvent;
-} catch {
-  // expo-speech-recognition not available (e.g. Expo Go)
-}
 
 function formatInspectionError(error: unknown): string {
   const msg = String(error);
@@ -48,10 +36,6 @@ export function InspectionCaptureScreen({
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [uploading, setUploading] = useState(false);
-  const [listening, setListening] = useState(false);
-  const [voiceAvailable, setVoiceAvailable] = useState(false);
-  const handleStartRef = useRef<() => Promise<void>>(null as any);
-  const handleStopRef = useRef<() => Promise<void>>(null as any);
 
   const handleStart = useCallback(async () => {
     if (recording || uploading || !cameraRef.current) return;
@@ -137,61 +121,6 @@ export function InspectionCaptureScreen({
     };
   }, [recording]);
 
-  useEffect(() => {
-    handleStartRef.current = handleStart;
-    handleStopRef.current = handleStop;
-  });
-
-  useEffect(() => {
-    if (!machine || !ExpoSpeechRecognitionModule || !permission?.granted || recording || uploading) return;
-    const resultHandler = (event: { results?: Array<{ transcript?: string }> }) => {
-      const t = event.results?.[0]?.transcript ?? '';
-      const cmd = matchVoiceCommand(t);
-      if (cmd === 'start') {
-        handleStartRef.current?.();
-        speak('Recording started');
-      } else if (cmd === 'stop') {
-        handleStopRef.current?.();
-        speak('Recording stopped');
-      }
-    };
-    const startListener = ExpoSpeechRecognitionModule.addListener('start', () => setListening(true));
-    const endListener = ExpoSpeechRecognitionModule.addListener('end', () => setListening(false));
-    const resultListener = ExpoSpeechRecognitionModule.addListener('result', resultHandler);
-    ExpoSpeechRecognitionModule.requestPermissionsAsync().then((r) => {
-      if (r.granted) {
-        setVoiceAvailable(true);
-        ExpoSpeechRecognitionModule!.start({
-          lang: 'en-US',
-          interimResults: true,
-          continuous: true,
-          contextualStrings: ['start video', 'stop video', 'start recording', 'stop recording'],
-        });
-      }
-    });
-    return () => {
-      startListener.remove();
-      endListener.remove();
-      resultListener.remove();
-      ExpoSpeechRecognitionModule?.stop?.();
-    };
-  }, [machine, permission?.granted, recording, uploading]);
-
-  const toggleVoice = useCallback(async () => {
-    if (!ExpoSpeechRecognitionModule || !voiceAvailable) return;
-    const state = await ExpoSpeechRecognitionModule.getStateAsync?.();
-    if (state?.status === 'recognizing') {
-      ExpoSpeechRecognitionModule.stop();
-    } else {
-      ExpoSpeechRecognitionModule.start({
-        lang: 'en-US',
-        interimResults: true,
-        continuous: true,
-        contextualStrings: ['start video', 'stop video', 'start recording', 'stop recording'],
-      });
-    }
-  }, [voiceAvailable]);
-
   if (!machine) {
     return (
       <Screen style={styles.container}>
@@ -244,15 +173,7 @@ export function InspectionCaptureScreen({
         <CameraView ref={cameraRef} style={styles.camera} facing="back" mode="video" />
         <View style={styles.overlay}>
           <Text style={styles.timer}>{timerLabel}</Text>
-          {voiceAvailable && !recording && !uploading ? (
-            <Text style={styles.voiceHint}>Say "start video" or "stop video" for hands-free</Text>
-          ) : null}
           <View style={styles.controls}>
-            {voiceAvailable && !uploading ? (
-              <TouchableOpacity style={styles.micButton} onPress={toggleVoice}>
-                <Text style={styles.micText}>{listening ? '🎤 Listening' : '🎤 Voice'}</Text>
-              </TouchableOpacity>
-            ) : null}
             <TouchableOpacity
               style={[styles.controlButton, recording ? styles.stopButton : styles.startButton]}
               onPress={recording ? handleStop : handleStart}
@@ -319,22 +240,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 12,
   },
-  voiceHint: {
-    color: '#9CA3AF',
-    fontSize: 11,
-    marginBottom: 8,
-  },
   controls: {
     alignItems: 'center',
-    gap: 8,
-  },
-  micButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-  },
-  micText: {
-    color: '#F4D35E',
-    fontSize: 12,
   },
   controlButton: {
     borderRadius: 18,

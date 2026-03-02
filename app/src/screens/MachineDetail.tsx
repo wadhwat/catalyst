@@ -128,22 +128,14 @@ export function MachineDetailScreen({
 
         <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => handleUploadMedia('photo')}
+          onPress={() => handleUploadMedia('video')}
           disabled={uploading}
         >
           {uploading ? (
             <ActivityIndicator color="#F4D35E" />
           ) : (
-            <Text style={styles.secondaryButtonText}>Upload Photo</Text>
+            <Text style={styles.secondaryButtonText}>Upload Recorded Video</Text>
           )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.secondaryButton}
-          onPress={() => handleUploadMedia('video')}
-          disabled={uploading}
-        >
-          <Text style={styles.secondaryButtonText}>Upload Recorded Video</Text>
         </TouchableOpacity>
 
         <TouchableOpacity

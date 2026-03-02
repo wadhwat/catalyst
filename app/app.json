@@ -1,8 +1,5 @@
 {
   "expo": {
-    "plugins": [
-      "expo-speech-recognition"
-    ],
     "name": "CATalyst Inspect",
     "slug": "catalyst-inspect",
     "version": "1.0.0",
@@ -19,8 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
-        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone for video recording."
       },
       "bundleIdentifier": "com.anonymous.catalyst-inspect"
     },
@@ -29,9 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1B1B1B"
       },
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": []
     },
     "web": {
       "favicon": "./assets/favicon.png"

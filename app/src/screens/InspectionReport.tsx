@@ -9,6 +9,7 @@ import { resolveMediaUrl } from '../api/client';
 import { useMachines } from '../machines/MachinesContext';
 import { Screen } from '../components/Screen';
 import { getPartSearchUrl } from '../utils/partsLinks';
+import { getDemoImage } from '../utils/demoImages';
 
 function formatItemLabel(id: string): string {
   return id
@@ -105,10 +106,14 @@ export function InspectionReportScreen({
               flagged.map((item) => {
                 const evidenceList = item.evidence_urls ?? (item as any).evidence ?? [];
                 const evidenceUrl = evidenceList[0] || '';
+                const demoSource = getDemoImage(item.id);
+                const imageSource = evidenceUrl
+                  ? { uri: resolveMediaUrl(evidenceUrl) }
+                  : demoSource;
                 return (
                   <View key={item.id} style={styles.flagCard}>
-                    {evidenceUrl ? (
-                      <Image source={{ uri: resolveMediaUrl(evidenceUrl) }} style={styles.flagImage} />
+                    {imageSource ? (
+                      <Image source={imageSource} style={styles.flagImage} resizeMode="cover" />
                     ) : (
                       <View style={styles.flagPlaceholder}>
                         <Text style={styles.flagPlaceholderText}>No image</Text>
