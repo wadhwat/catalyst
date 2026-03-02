@@ -37,7 +37,6 @@ from src.memory.supermemory_client import SupermemoryClient
 from src.machines.routes import router as machines_router
 from src.preferences.routes import router as preferences_router
 from src.reports.routes import router as reports_router
-from src.api.tts_routes import router as tts_router
 from src.utils.images import load_image, normalize_image_to_frame, resize_max, write_blank_frame
 from src.utils.video import sample_video_frames
 
@@ -48,7 +47,6 @@ app.include_router(memory_router)
 app.include_router(machines_router)
 app.include_router(reports_router)
 app.include_router(preferences_router)
-app.include_router(tts_router)
 logger = logging.getLogger(__name__)
 memory_client = SupermemoryClient()
 INSPECTIONS_DIR = Path('data') / 'inspections'

@@ -37,8 +37,16 @@ catalyst_*/
 tmp/
 temp/
 
+# Source / training images (large; bundled copies live in app/assets/demo/)
+Fail/
+Pass/
+
 # EC2 inference sandbox (deploy separately; not part of main app)
 ec2_inference/
+
+# iOS / Android build artifacts
+app/ios/
+app/android/
 
 # Secrets and credentials (never commit)
 *.pem
